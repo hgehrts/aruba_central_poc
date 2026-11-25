@@ -1,0 +1,411 @@
+<dashboard version="2" theme="dark">
+    <label>Executive summary</label>
+    <description>Availability, alerts, firmware compliance, reboots and configuration state on one page, with the top risks.</description>
+    <definition><![CDATA[
+{
+  "title": "Executive summary",
+  "description": "Availability, alerts, firmware compliance, reboots and configuration state on one page, with the top risks.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-7d,now"
+      }
+    },
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_online": {
+      "type": "ds.search",
+      "name": "Devices online",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(_time) as last_poll latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type by serialNumber\n| stats count as total count(eval(status=\"ONLINE\")) as online\n| eval pct=if(total>0,round(100*online/total,1),null())\n| fields pct"
+      }
+    },
+    "ds_alerts": {
+      "type": "ds.search",
+      "name": "Critical and major",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where state=\"Open\" AND (severity=\"Critical\" OR severity=\"Major\") | stats count"
+      }
+    },
+    "ds_fw": {
+      "type": "ds.search",
+      "name": "Firmware",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| stats count(eval(fw_status=\"At or above fixed version\")) as ok count(eval(fw_status=\"Below fixed version\")) as below\n| eval pct=if(ok+below>0,round(100*ok/(ok+below),1),null())\n| fields pct"
+      }
+    },
+    "ds_reboots": {
+      "type": "ds.search",
+      "name": "Reboots",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" status=ONLINE uptimeInMillis>0\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| sort 0 serialNumber _time\n| streamstats current=f last(uptimeInMillis) as prev_up last(firmwareVersion) as prev_fw last(clientCount) as prev_clients by serialNumber\n| eval reboot=if(isnotnull(prev_up) AND uptimeInMillis<prev_up-60000,1,0)\n| eval reboot_type=case(reboot=0,null(),prev_fw=firmwareVersion,\"Same firmware\",true(),\"After firmware change\")\n| eval reboot_time=_time-uptimeInMillis/1000\n| stats count(eval(reboot_type=\"Same firmware\")) as reboots"
+      }
+    },
+    "ds_sync": {
+      "type": "ds.search",
+      "name": "Not synchronized",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\" earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as name latest(deviceType) as type latest(model) as model latest(siteName) as site latest(status) as status latest(configStatus) as configStatus latest(firmwareVersion) as firmware latest(lastSeenAt) as lastSeenAt by serialNumber\n| eval config=if(isnull(configStatus) OR configStatus=\"\" OR configStatus=\"null\",\"(not reported)\",configStatus)\n| eval firmware=if(isnull(firmware) OR firmware=\"\" OR firmware=\"null\",\"(not reported)\",firmware), lastSeenAt=if(isnull(lastSeenAt) OR lastSeenAt=\"\" OR lastSeenAt=\"null\",\"(not reported)\",lastSeenAt)\n| where config!=\"Synchronized\" AND config!=\"(not reported)\" | stats count"
+      }
+    },
+    "ds_ttc": {
+      "type": "ds.search",
+      "name": "Time to clear",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where state=\"Cleared\" | stats median(hours_to_clear) as hours\n| eval minutes=round(hours*60) | fields minutes"
+      }
+    },
+    "ds_avail": {
+      "type": "ds.search",
+      "name": "Availability",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\"))\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| rename siteName as site, deviceName as name\n| eval group=case(type=\"ACCESS_POINT\",\"Access points\",type=\"SWITCH\",\"Switches\",type=\"GATEWAY\",\"Gateways\",true(),\"Other\"), online=if(status=\"ONLINE\",100,0)\n| timechart minspan=1h avg(online) as availability by group"
+      }
+    },
+    "ds_created": {
+      "type": "ds.search",
+      "name": "Alerts created",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| eval _time=created\n| timechart span=1d count by severity"
+      }
+    },
+    "ds_risks": {
+      "type": "ds.search",
+      "name": "Top risks",
+      "options": {
+        "query": "search `aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| where fw_status=\"Below fixed version\" | stats count\n| eval order=1, risk=\"Access points below the fixed firmware version\", dashboard=\"firmware\"\n| append [search `aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| `aruba_fw_issues` | stats dc(serialNumber) as count\n| eval order=2, risk=\"Access points in a documented firmware issue range\", dashboard=\"firmware\"]\n| append [search `aruba_central_index` sourcetype=\"aruba:central:ap\" status=ONLINE uptimeInMillis>0\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| sort 0 serialNumber _time\n| streamstats current=f last(uptimeInMillis) as prev_up last(firmwareVersion) as prev_fw last(clientCount) as prev_clients by serialNumber\n| eval reboot=if(isnotnull(prev_up) AND uptimeInMillis<prev_up-60000,1,0)\n| eval reboot_type=case(reboot=0,null(),prev_fw=firmwareVersion,\"Same firmware\",true(),\"After firmware change\")\n| eval reboot_time=_time-uptimeInMillis/1000\n| where reboot_type=\"Same firmware\" | stats count by serialNumber | where count>=3 | stats count\n| eval order=3, risk=\"Access points with 3 or more reboots on the same firmware\", dashboard=\"ap_stability\"]\n| append [search `aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(_time) as last_poll latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type by serialNumber\n| where status!=\"ONLINE\" | stats count\n| eval order=4, risk=\"Devices offline\", dashboard=\"offline\"]\n| append [search `aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where state=\"Open\" AND (severity=\"Critical\" OR severity=\"Major\") | stats count\n| eval order=5, risk=\"Open critical and major alerts\", dashboard=\"alerts\"]\n| append [search `aruba_central_index` sourcetype=\"aruba:central:device\" earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as name latest(deviceType) as type latest(model) as model latest(siteName) as site latest(status) as status latest(configStatus) as configStatus latest(firmwareVersion) as firmware latest(lastSeenAt) as lastSeenAt by serialNumber\n| eval config=if(isnull(configStatus) OR configStatus=\"\" OR configStatus=\"null\",\"(not reported)\",configStatus)\n| eval firmware=if(isnull(firmware) OR firmware=\"\" OR firmware=\"null\",\"(not reported)\",firmware), lastSeenAt=if(isnull(lastSeenAt) OR lastSeenAt=\"\" OR lastSeenAt=\"null\",\"(not reported)\",lastSeenAt)\n| where config!=\"Synchronized\" AND config!=\"(not reported)\" | stats count\n| eval order=6, risk=\"Devices with configuration not synchronized\", dashboard=\"config_sync\"]\n| where count>0\n| sort order\n| table risk count dashboard\n| rename risk as Risk, count as Count, dashboard as Dashboard"
+      }
+    }
+  },
+  "visualizations": {
+    "v_online": {
+      "type": "splunk.singlevalue",
+      "title": "Devices online now",
+      "dataSources": {
+        "primary": "ds_online"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "unit": "%",
+        "unitPosition": "after"
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_central_poc/offline",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_alerts": {
+      "type": "splunk.singlevalue",
+      "title": "Open critical and major alerts",
+      "dataSources": {
+        "primary": "ds_alerts"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_central_poc/alerts",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_fw": {
+      "type": "splunk.singlevalue",
+      "title": "APs at or above the fixed version",
+      "dataSources": {
+        "primary": "ds_fw"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "unit": "%",
+        "unitPosition": "after"
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_central_poc/firmware",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_reboots": {
+      "type": "splunk.singlevalue",
+      "title": "AP reboots on the same firmware",
+      "dataSources": {
+        "primary": "ds_reboots"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_central_poc/ap_stability",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_sync": {
+      "type": "splunk.singlevalue",
+      "title": "Devices not synchronized",
+      "dataSources": {
+        "primary": "ds_sync"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_central_poc/config_sync",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_ttc": {
+      "type": "splunk.singlevalue",
+      "title": "Median time to clear an alert (minutes)",
+      "dataSources": {
+        "primary": "ds_ttc"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_central_poc/alerts",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_avail": {
+      "type": "splunk.line",
+      "title": "Device availability (% of polls online)",
+      "dataSources": {
+        "primary": "ds_avail"
+      },
+      "options": {
+        "x": "> primary | seriesByName('_time')",
+        "legendDisplay": "bottom",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "nullValueDisplay": "gaps"
+      }
+    },
+    "v_created": {
+      "type": "splunk.column",
+      "title": "Alerts created per day",
+      "dataSources": {
+        "primary": "ds_created"
+      },
+      "options": {
+        "x": "> primary | seriesByName('_time')",
+        "legendDisplay": "bottom",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked"
+      }
+    },
+    "v_risks": {
+      "type": "splunk.table",
+      "title": "Top risks (click a row to open the dashboard)",
+      "dataSources": {
+        "primary": "ds_risks"
+      },
+      "options": {
+        "count": 8
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_central_poc/$row.Dashboard.value$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_note": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "Availability is the share of polls in which a device reported *online*. Access points are polled every minute by default, switches and gateways hourly, so the lines are indicators and not an SLA figure. Counts for firmware use the lookups described on the Firmware and security page. The time range applies to alerts, reboots and the trends. Everything else shows the current state.",
+        "fontSize": "small"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time",
+      "input_site"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "absolute",
+        "options": {
+          "width": 1200,
+          "height": 1090
+        },
+        "structure": [
+          {
+            "item": "v_online",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 390,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_alerts",
+            "type": "block",
+            "position": {
+              "x": 400,
+              "y": 0,
+              "w": 390,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_fw",
+            "type": "block",
+            "position": {
+              "x": 800,
+              "y": 0,
+              "w": 390,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_reboots",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 170,
+              "w": 390,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_sync",
+            "type": "block",
+            "position": {
+              "x": 400,
+              "y": 170,
+              "w": 390,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_ttc",
+            "type": "block",
+            "position": {
+              "x": 800,
+              "y": 170,
+              "w": 390,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_avail",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 340,
+              "w": 590,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_created",
+            "type": "block",
+            "position": {
+              "x": 610,
+              "y": 340,
+              "w": 590,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_risks",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 660,
+              "w": 1200,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_note",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 960,
+              "w": 1200,
+              "h": 110
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Executive summary"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

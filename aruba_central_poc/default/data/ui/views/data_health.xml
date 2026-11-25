@@ -1,0 +1,249 @@
+<dashboard version="2" theme="dark">
+    <label>Data health</label>
+    <description>Is the data from TA_hpe_aruba_central arriving? Freshness, volume, input runs and add-on errors.</description>
+    <definition><![CDATA[
+{
+  "title": "Data health",
+  "description": "Is the data from TA_hpe_aruba_central arriving? Freshness, volume, input runs and add-on errors.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-24h,now"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_fresh": {
+      "type": "ds.search",
+      "name": "Freshness",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:*\"\n| stats latest(_time) as last_event count as events by sourcetype\n| eval age_min=round((now()-last_event)/60,1)\n| eval max_age=case(sourcetype=\"aruba:central:ap\" OR sourcetype=\"aruba:central:swarm\",10,sourcetype=\"aruba:central:ap_throughput\",45,sourcetype=\"aruba:central:site_health\",30,sourcetype=\"aruba:central:device\" OR sourcetype=\"aruba:central:device_inventory\",180,true(),null())\n| eval Status=case(sourcetype=\"aruba:central:alert\",\"Written on change\",age_min<=max_age,\"OK\",true(),\"Stale: check the input\")\n| eval \"Last event\"=strftime(last_event,\"%Y-%m-%d %H:%M:%S\")\n| table sourcetype \"Last event\" age_min events Status\n| rename sourcetype as Sourcetype, age_min as \"Age (min)\", events as Events\n| sort Sourcetype"
+      }
+    },
+    "ds_stale": {
+      "type": "ds.search",
+      "name": "Stale",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:*\"\n| stats latest(_time) as last_event count as events by sourcetype\n| eval age_min=round((now()-last_event)/60,1)\n| eval max_age=case(sourcetype=\"aruba:central:ap\" OR sourcetype=\"aruba:central:swarm\",10,sourcetype=\"aruba:central:ap_throughput\",45,sourcetype=\"aruba:central:site_health\",30,sourcetype=\"aruba:central:device\" OR sourcetype=\"aruba:central:device_inventory\",180,true(),null())\n| eval Status=case(sourcetype=\"aruba:central:alert\",\"Written on change\",age_min<=max_age,\"OK\",true(),\"Stale: check the input\")\n| where Status=\"Stale: check the input\" | stats count"
+      }
+    },
+    "ds_vol": {
+      "type": "ds.search",
+      "name": "Volume",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:*\"\n| timechart minspan=1h count by sourcetype"
+      }
+    },
+    "ds_err": {
+      "type": "ds.search",
+      "name": "Errors",
+      "options": {
+        "query": "index=_internal source=*ta_hpe_aruba_central_* (log_level=ERROR OR log_level=WARNING)\n| timechart minspan=1h count by log_level"
+      }
+    },
+    "ds_errtbl": {
+      "type": "ds.search",
+      "name": "Recent problems",
+      "options": {
+        "query": "index=_internal source=*ta_hpe_aruba_central_* (log_level=ERROR OR log_level=WARNING)\n| eval Log=replace(source,\".*/\",\"\")\n| table _time log_level Log exc_l action reason path step\n| sort - _time\n| rename log_level as Level, exc_l as Category, action as Action, reason as Reason, path as Path, step as Step"
+      }
+    },
+    "ds_runs": {
+      "type": "ds.search",
+      "name": "Runs",
+      "options": {
+        "query": "index=_internal source=*ta_hpe_aruba_central_* action=run_summary\n| stats latest(_time) as last_run count as runs avg(duration_s) as avg_s max(duration_s) as max_s sum(api_requests) as requests sum(errors) as errors by modular_input_name\n| eval \"Last run\"=strftime(last_run,\"%Y-%m-%d %H:%M:%S\"), avg_s=round(avg_s,1)\n| table modular_input_name \"Last run\" runs avg_s max_s requests errors\n| rename modular_input_name as Input, runs as Runs, avg_s as \"Avg duration (s)\", max_s as \"Max duration (s)\", requests as \"API requests\", errors as Errors"
+      }
+    }
+  },
+  "visualizations": {
+    "v_stale": {
+      "type": "splunk.singlevalue",
+      "title": "Sourcetypes that look stale",
+      "dataSources": {
+        "primary": "ds_stale"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_fresh": {
+      "type": "splunk.table",
+      "title": "Data freshness per sourcetype",
+      "dataSources": {
+        "primary": "ds_fresh"
+      },
+      "options": {
+        "count": 8
+      }
+    },
+    "v_vol": {
+      "type": "splunk.column",
+      "title": "Events per hour",
+      "dataSources": {
+        "primary": "ds_vol"
+      },
+      "options": {
+        "x": "> primary | seriesByName('_time')",
+        "legendDisplay": "right",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked"
+      }
+    },
+    "v_err": {
+      "type": "splunk.column",
+      "title": "Add-on warnings and errors",
+      "dataSources": {
+        "primary": "ds_err"
+      },
+      "options": {
+        "x": "> primary | seriesByName('_time')",
+        "legendDisplay": "bottom",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked"
+      }
+    },
+    "v_runs": {
+      "type": "splunk.table",
+      "title": "Input runs",
+      "dataSources": {
+        "primary": "ds_runs"
+      },
+      "options": {
+        "count": 8
+      }
+    },
+    "v_errtbl": {
+      "type": "splunk.table",
+      "title": "Recent warnings and errors",
+      "dataSources": {
+        "primary": "ds_errtbl"
+      },
+      "options": {
+        "count": 10
+      }
+    },
+    "v_note": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "Freshness uses the default input intervals (Wireless 60 s, AP Throughput 900 s, Inventory 3600 s, Site Health 300 s) with room for a missed run. Alerts are written only when they change, so they have no freshness limit. The add-on log panels read `index=_internal`; users need access to that index. Use this page first when a dashboard looks empty.",
+        "fontSize": "small"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "absolute",
+        "options": {
+          "width": 1200,
+          "height": 1400
+        },
+        "structure": [
+          {
+            "item": "v_stale",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 390,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_fresh",
+            "type": "block",
+            "position": {
+              "x": 400,
+              "y": 0,
+              "w": 790,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_vol",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 320,
+              "w": 590,
+              "h": 290
+            }
+          },
+          {
+            "item": "v_err",
+            "type": "block",
+            "position": {
+              "x": 610,
+              "y": 320,
+              "w": 590,
+              "h": 290
+            }
+          },
+          {
+            "item": "v_runs",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 630,
+              "w": 1200,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_errtbl",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 930,
+              "w": 1200,
+              "h": 320
+            }
+          },
+          {
+            "item": "v_note",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1270,
+              "w": 1200,
+              "h": 110
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Data health"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

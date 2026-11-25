@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0
+
+- New menu structure: Management, Operations, Troubleshooting, Risk and Platform.
+- New dashboards: Executive summary, Offline devices, AP stability, Capacity and load, Config sync,
+  Firmware and security, Data health.
+- Alerts and Sites are extended. Alerts shows open alerts, age, time to clear, a noise ranking and the
+  root cause and recommended action of a selected alert. Sites ranks sites by poor health and shows a trend.
+- Two editable lookups: `aruba_firmware_baseline` (fixed versions from HPE advisory HPESBNW05162) and
+  `aruba_known_issues` (documented issue ranges from the AOS-10.8.0.2 and AOS-10.8.1.2 release notes).
+- New macros for firmware comparison and ISO timestamps. See the README.
+
 ## 1.1.0
 
 - New **Configuration** page in the app menu. It lists the indexes that contain `aruba:central:*` data,

@@ -8,8 +8,10 @@ already collected and indexed. Without that add-on and its data the dashboards s
 
 ## Dashboards
 
-Overview, access points, one access point, throughput, devices, sites and alerts. Rows and single values
-drill down between the views. The views use Splunk's dark theme. Studio keeps the theme stored in the
+Overview and executive summary; offline devices, alerts and sites; AP stability, capacity and load, access points,
+one access point, throughput, devices and config sync; firmware and security; data health and configuration.
+Rows and single values drill down between the views. The full list with the question each page answers is in
+the repository README. The views use Splunk's dark theme. Studio keeps the theme stored in the
 view and does not switch it with the user preference. Search and the app chrome follow the user because
 the app declares light and dark.
 

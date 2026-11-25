@@ -1,0 +1,10 @@
+model_prefix,fw_from,fixed_in,bug_id,issue,source_url
+AP-635,10.7.2.1,10.8.0.2,AOS-268983,Random reboot with kernel panic (NSS firmware crashed),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-755,10.7.2.2,10.8.0.2,AOS-272401,Repeated reboots (wireless driver assert),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-755,10.8.0.0,10.8.0.2,AOS-272368,Crash with a 320 MHz channel and FTM enabled,https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-567,10.4.1.5,10.8.0.2,AOS-265802,False radar detection: 5 GHz channel changes and client disconnects,https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-735,10.8.0.0,10.8.1.2,AOS-274049,Intermittent reboots (wireless packet forwarding),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-735,10.8.0.0,10.8.1.2,AOS-276388,Scheduler soft lockup causes a kernel panic and reboot,https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-725,10.8.0.0,10.8.1.2,AOS-276388,Scheduler soft lockup causes a kernel panic and reboot,https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-635,10.7.2.5,10.8.1.2,AOS-275494,Reboot with kernel panic (fatal exception),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-725,10.7.2.5,10.8.1.2,AOS-263255,Crash after the driver ran out of pool memory (probe-response suppression list),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html

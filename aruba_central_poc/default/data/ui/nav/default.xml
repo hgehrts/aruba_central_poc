@@ -1,11 +1,28 @@
 <nav search_view="search">
   <view name="overview" default="true"/>
-  <view name="access_points"/>
-  <view name="access_point"/>
-  <view name="throughput"/>
-  <view name="devices"/>
-  <view name="sites"/>
-  <view name="alerts"/>
-  <view name="setup"/>
+  <collection label="Management">
+    <view name="executive"/>
+  </collection>
+  <collection label="Operations">
+    <view name="offline"/>
+    <view name="alerts"/>
+    <view name="sites"/>
+  </collection>
+  <collection label="Troubleshooting">
+    <view name="ap_stability"/>
+    <view name="capacity"/>
+    <view name="access_points"/>
+    <view name="access_point"/>
+    <view name="throughput"/>
+    <view name="devices"/>
+    <view name="config_sync"/>
+  </collection>
+  <collection label="Risk">
+    <view name="firmware"/>
+  </collection>
+  <collection label="Platform">
+    <view name="data_health"/>
+    <view name="setup"/>
+  </collection>
   <view name="search"/>
 </nav>

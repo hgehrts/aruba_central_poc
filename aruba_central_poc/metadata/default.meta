@@ -4,3 +4,9 @@ export = none
 
 [macros]
 export = system
+
+[transforms]
+export = system
+
+[lookups]
+export = system

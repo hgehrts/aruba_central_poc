@@ -1,0 +1,350 @@
+<dashboard version="2" theme="dark">
+    <label>Firmware and security</label>
+    <description>Access point firmware against advisory baselines and documented release-note issues.</description>
+    <definition><![CDATA[
+{
+  "title": "Firmware and security",
+  "description": "Access point firmware against advisory baselines and documented release-note issues.",
+  "inputs": {
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_pct": {
+      "type": "ds.search",
+      "name": "Compliance",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| stats count(eval(fw_status=\"At or above fixed version\")) as ok count(eval(fw_status=\"Below fixed version\")) as below\n| eval pct=if(ok+below>0,round(100*ok/(ok+below),1),null())\n| fields pct"
+      }
+    },
+    "ds_below": {
+      "type": "ds.search",
+      "name": "Below fixed",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| where fw_status=\"Below fixed version\" | stats count"
+      }
+    },
+    "ds_issue": {
+      "type": "ds.search",
+      "name": "Documented issues",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| `aruba_fw_issues` | stats dc(serialNumber) as aps"
+      }
+    },
+    "ds_total": {
+      "type": "ds.search",
+      "name": "APs",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| stats count"
+      }
+    },
+    "ds_versions": {
+      "type": "ds.search",
+      "name": "Versions",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| chart count over model by fw_norm"
+      }
+    },
+    "ds_status": {
+      "type": "ds.search",
+      "name": "Status",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| stats count by fw_status | sort - count"
+      }
+    },
+    "ds_below_tbl": {
+      "type": "ds.search",
+      "name": "Below fixed",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| where fw_status=\"Below fixed version\"\n| table serialNumber deviceName model siteName firmwareVersion min_fixed advisory\n| sort model deviceName\n| rename deviceName as AP, siteName as Site, firmwareVersion as Firmware, min_fixed as \"Fixed in\", advisory as Advisory, model as Model"
+      }
+    },
+    "ds_issue_tbl": {
+      "type": "ds.search",
+      "name": "Issues",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| `aruba_fw_issues`\n| table serialNumber deviceName model siteName firmwareVersion ki_bug ki_issue ki_fixed ki_url\n| sort model deviceName ki_bug\n| rename deviceName as AP, siteName as Site, firmwareVersion as Firmware, ki_bug as \"Bug ID\", ki_issue as Issue, ki_fixed as \"Fixed in\", ki_url as Source, model as Model"
+      }
+    },
+    "ds_other": {
+      "type": "ds.search",
+      "name": "Switch and gateway firmware",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\" earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceType) as deviceType latest(model) as model latest(firmwareVersion) as firmwareVersion by serialNumber\n| stats count as devices by deviceType model firmwareVersion\n| sort deviceType model - devices\n| rename deviceType as Type, model as Model, firmwareVersion as Firmware, devices as Devices"
+      }
+    }
+  },
+  "visualizations": {
+    "v_pct": {
+      "type": "splunk.singlevalue",
+      "title": "APs at or above the fixed version",
+      "dataSources": {
+        "primary": "ds_pct"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "unit": "%",
+        "unitPosition": "after"
+      }
+    },
+    "v_below": {
+      "type": "splunk.singlevalue",
+      "title": "APs below the fixed version",
+      "dataSources": {
+        "primary": "ds_below"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_issue": {
+      "type": "splunk.singlevalue",
+      "title": "APs in a documented issue range",
+      "dataSources": {
+        "primary": "ds_issue"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_total": {
+      "type": "splunk.singlevalue",
+      "title": "APs checked",
+      "dataSources": {
+        "primary": "ds_total"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_versions": {
+      "type": "splunk.column",
+      "title": "Firmware versions by model",
+      "dataSources": {
+        "primary": "ds_versions"
+      },
+      "options": {
+        "x": "> primary | seriesByName('model')",
+        "legendDisplay": "right",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked"
+      }
+    },
+    "v_status": {
+      "type": "splunk.pie",
+      "title": "Compliance status",
+      "dataSources": {
+        "primary": "ds_status"
+      },
+      "options": {
+        "legendDisplay": "right"
+      }
+    },
+    "v_below_tbl": {
+      "type": "splunk.table",
+      "title": "Access points below the fixed version",
+      "dataSources": {
+        "primary": "ds_below_tbl"
+      },
+      "options": {
+        "count": 10
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_central_poc/access_point?form.serial=$row.serialNumber.value$&form.site=*",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_issue_tbl": {
+      "type": "splunk.table",
+      "title": "Access points in a documented issue range",
+      "dataSources": {
+        "primary": "ds_issue_tbl"
+      },
+      "options": {
+        "count": 10
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_central_poc/access_point?form.serial=$row.serialNumber.value$&form.site=*",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_other": {
+      "type": "splunk.table",
+      "title": "Switch and gateway firmware (no baseline rows shipped)",
+      "dataSources": {
+        "primary": "ds_other"
+      },
+      "options": {
+        "count": 10
+      }
+    },
+    "v_note": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "The fixed versions come from the lookup `aruba_firmware_baseline` (HPE advisory HPESBNW05162). The issue ranges come from the lookup `aruba_known_issues` (HPE release notes). Both are plain CSV files with a source link per row: review them, then add or remove rows for your environment. *Documented issue range* means that the model and version appear in a release-note issue. The fix is listed for the release it first appeared in. Check the release notes for the fix on your own release train.",
+        "fontSize": "small"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "-30m",
+            "latest": "now"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_site"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "absolute",
+        "options": {
+          "width": 1200,
+          "height": 1660
+        },
+        "structure": [
+          {
+            "item": "v_pct",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 290,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_below",
+            "type": "block",
+            "position": {
+              "x": 303,
+              "y": 0,
+              "w": 290,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_issue",
+            "type": "block",
+            "position": {
+              "x": 606,
+              "y": 0,
+              "w": 290,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_total",
+            "type": "block",
+            "position": {
+              "x": 909,
+              "y": 0,
+              "w": 290,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_versions",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 170,
+              "w": 760,
+              "h": 320
+            }
+          },
+          {
+            "item": "v_status",
+            "type": "block",
+            "position": {
+              "x": 780,
+              "y": 170,
+              "w": 420,
+              "h": 320
+            }
+          },
+          {
+            "item": "v_below_tbl",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 510,
+              "w": 1200,
+              "h": 330
+            }
+          },
+          {
+            "item": "v_issue_tbl",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 860,
+              "w": 1200,
+              "h": 330
+            }
+          },
+          {
+            "item": "v_other",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1210,
+              "w": 1200,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_note",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1530,
+              "w": 1200,
+              "h": 110
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Firmware and security"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

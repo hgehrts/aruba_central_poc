@@ -1,0 +1,248 @@
+<dashboard version="2" theme="dark">
+    <label>Config sync</label>
+    <description>Configuration status of devices as reported by New Central.</description>
+    <definition><![CDATA[
+{
+  "title": "Config sync",
+  "description": "Configuration status of devices as reported by New Central.",
+  "inputs": {
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    },
+    "input_cfg": {
+      "type": "input.dropdown",
+      "title": "Config status",
+      "options": {
+        "token": "cfg",
+        "defaultValue": "*",
+        "items": [
+          {
+            "label": "All",
+            "value": "*"
+          },
+          {
+            "label": "Out of sync",
+            "value": "Out of sync"
+          },
+          {
+            "label": "Synchronized",
+            "value": "Synchronized"
+          },
+          {
+            "label": "Not reported",
+            "value": "(not reported)"
+          }
+        ]
+      }
+    }
+  },
+  "dataSources": {
+    "ds_sync": {
+      "type": "ds.search",
+      "name": "Synchronized",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\" earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as name latest(deviceType) as type latest(model) as model latest(siteName) as site latest(status) as status latest(configStatus) as configStatus latest(firmwareVersion) as firmware latest(lastSeenAt) as lastSeenAt by serialNumber\n| eval config=if(isnull(configStatus) OR configStatus=\"\" OR configStatus=\"null\",\"(not reported)\",configStatus)\n| eval firmware=if(isnull(firmware) OR firmware=\"\" OR firmware=\"null\",\"(not reported)\",firmware), lastSeenAt=if(isnull(lastSeenAt) OR lastSeenAt=\"\" OR lastSeenAt=\"null\",\"(not reported)\",lastSeenAt)\n| where config=\"Synchronized\" | stats count"
+      }
+    },
+    "ds_out": {
+      "type": "ds.search",
+      "name": "Not synchronized",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\" earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as name latest(deviceType) as type latest(model) as model latest(siteName) as site latest(status) as status latest(configStatus) as configStatus latest(firmwareVersion) as firmware latest(lastSeenAt) as lastSeenAt by serialNumber\n| eval config=if(isnull(configStatus) OR configStatus=\"\" OR configStatus=\"null\",\"(not reported)\",configStatus)\n| eval firmware=if(isnull(firmware) OR firmware=\"\" OR firmware=\"null\",\"(not reported)\",firmware), lastSeenAt=if(isnull(lastSeenAt) OR lastSeenAt=\"\" OR lastSeenAt=\"null\",\"(not reported)\",lastSeenAt)\n| where config!=\"Synchronized\" AND config!=\"(not reported)\" | stats count"
+      }
+    },
+    "ds_nr": {
+      "type": "ds.search",
+      "name": "Not reported",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\" earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as name latest(deviceType) as type latest(model) as model latest(siteName) as site latest(status) as status latest(configStatus) as configStatus latest(firmwareVersion) as firmware latest(lastSeenAt) as lastSeenAt by serialNumber\n| eval config=if(isnull(configStatus) OR configStatus=\"\" OR configStatus=\"null\",\"(not reported)\",configStatus)\n| eval firmware=if(isnull(firmware) OR firmware=\"\" OR firmware=\"null\",\"(not reported)\",firmware), lastSeenAt=if(isnull(lastSeenAt) OR lastSeenAt=\"\" OR lastSeenAt=\"null\",\"(not reported)\",lastSeenAt)\n| where config=\"(not reported)\" | stats count"
+      }
+    },
+    "ds_type": {
+      "type": "ds.search",
+      "name": "By type",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\" earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as name latest(deviceType) as type latest(model) as model latest(siteName) as site latest(status) as status latest(configStatus) as configStatus latest(firmwareVersion) as firmware latest(lastSeenAt) as lastSeenAt by serialNumber\n| eval config=if(isnull(configStatus) OR configStatus=\"\" OR configStatus=\"null\",\"(not reported)\",configStatus)\n| eval firmware=if(isnull(firmware) OR firmware=\"\" OR firmware=\"null\",\"(not reported)\",firmware), lastSeenAt=if(isnull(lastSeenAt) OR lastSeenAt=\"\" OR lastSeenAt=\"null\",\"(not reported)\",lastSeenAt)\n| chart count over type by config"
+      }
+    },
+    "ds_list": {
+      "type": "ds.search",
+      "name": "Devices",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\" earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as name latest(deviceType) as type latest(model) as model latest(siteName) as site latest(status) as status latest(configStatus) as configStatus latest(firmwareVersion) as firmware latest(lastSeenAt) as lastSeenAt by serialNumber\n| eval config=if(isnull(configStatus) OR configStatus=\"\" OR configStatus=\"null\",\"(not reported)\",configStatus)\n| eval firmware=if(isnull(firmware) OR firmware=\"\" OR firmware=\"null\",\"(not reported)\",firmware), lastSeenAt=if(isnull(lastSeenAt) OR lastSeenAt=\"\" OR lastSeenAt=\"null\",\"(not reported)\",lastSeenAt)\n| where \"$cfg$\"=\"*\" OR config=\"$cfg$\"\n| eval Last_seen=lastSeenAt\n| table serialNumber name type model site status config firmware Last_seen\n| eval sortkey=case(config=\"Synchronized\",2,config=\"(not reported)\",3,true(),1)\n| sort 0 sortkey type site name\n| fields - sortkey\n| rename name as Name, type as Type, model as Model, site as Site, status as Status, config as \"Config status\", firmware as Firmware, Last_seen as \"Last seen\""
+      }
+    }
+  },
+  "visualizations": {
+    "v_sync": {
+      "type": "splunk.singlevalue",
+      "title": "Synchronized",
+      "dataSources": {
+        "primary": "ds_sync"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_out": {
+      "type": "splunk.singlevalue",
+      "title": "Not synchronized",
+      "dataSources": {
+        "primary": "ds_out"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_nr": {
+      "type": "splunk.singlevalue",
+      "title": "Config status not reported",
+      "dataSources": {
+        "primary": "ds_nr"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_type": {
+      "type": "splunk.column",
+      "title": "Config status by device type",
+      "dataSources": {
+        "primary": "ds_type"
+      },
+      "options": {
+        "x": "> primary | seriesByName('type')",
+        "legendDisplay": "right",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked"
+      }
+    },
+    "v_list": {
+      "type": "splunk.table",
+      "title": "Devices",
+      "dataSources": {
+        "primary": "ds_list"
+      },
+      "options": {
+        "count": 12
+      }
+    },
+    "v_note": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "`configStatus` comes from the Inventory input (hourly by default). *Not reported* is common for gateways and for devices that are offline. Switches and gateways that are not synchronized are the ones to check first after a migration or a configuration change in New Central.",
+        "fontSize": "small"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "-30m",
+            "latest": "now"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_site",
+      "input_cfg"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "absolute",
+        "options": {
+          "width": 1200,
+          "height": 1030
+        },
+        "structure": [
+          {
+            "item": "v_sync",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 390,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_out",
+            "type": "block",
+            "position": {
+              "x": 400,
+              "y": 0,
+              "w": 390,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_nr",
+            "type": "block",
+            "position": {
+              "x": 800,
+              "y": 0,
+              "w": 390,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_type",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 170,
+              "w": 1200,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_list",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 470,
+              "w": 1200,
+              "h": 420
+            }
+          },
+          {
+            "item": "v_note",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 910,
+              "w": 1200,
+              "h": 100
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Config sync"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>
