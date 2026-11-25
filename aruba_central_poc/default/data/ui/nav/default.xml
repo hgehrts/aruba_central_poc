@@ -6,5 +6,6 @@
   <view name="devices"/>
   <view name="sites"/>
   <view name="alerts"/>
+  <view name="setup"/>
   <view name="search"/>
 </nav>

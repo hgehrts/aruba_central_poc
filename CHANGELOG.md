@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- New **Configuration** page in the app menu. It lists the indexes that contain `aruba:central:*` data,
+  saves the macro `aruba_central_index` without a restart and shows the events per sourcetype for the
+  saved value. The app declares it as its `setup_view`.
+
 ## 1.0.0
 
 First standalone release. The dashboards come from the companion app that shipped with

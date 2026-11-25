@@ -22,8 +22,11 @@ the app declares light and dark.
 
 ## Index setting
 
-All searches use the search macro `aruba_central_index`. The default is `index=main`. Set it to the index
-that holds your Aruba Central data, for example in `local/macros.conf`:
+All searches use the search macro `aruba_central_index`. The default is `index=main`. Open
+**Configuration** in the app menu to find the index with the Aruba Central data and to save the macro
+without a restart. The page also shows the events per sourcetype for the saved value.
+
+You can also set the macro by hand, for example in `local/macros.conf`:
 
 ```
 [aruba_central_index]

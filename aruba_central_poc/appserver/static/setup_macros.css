@@ -1,0 +1,33 @@
+.aruba-setup-intro h3,
+.aruba-setup-form h3 { margin-top: 4px; }
+
+.aruba-setup-form label {
+    display: block;
+    margin: 14px 0 4px;
+    font-weight: 600;
+}
+
+.aruba-setup-input {
+    width: 420px;
+    max-width: 100%;
+    padding: 6px 8px;
+    font-family: monospace;
+}
+
+.aruba-setup-actions {
+    margin-top: 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.aruba-setup-status { font-weight: 600; }
+.aruba-setup-status.ok { color: #118832; }
+.aruba-setup-status.err { color: #d41f1f; }
+.aruba-setup-status.busy { color: #1182f3; }
+
+.aruba-setup-note {
+    margin-top: 16px;
+    opacity: 0.7;
+    font-size: 12px;
+}
