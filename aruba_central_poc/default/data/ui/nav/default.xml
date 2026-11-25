@@ -1,0 +1,10 @@
+<nav search_view="search">
+  <view name="overview" default="true"/>
+  <view name="access_points"/>
+  <view name="access_point"/>
+  <view name="throughput"/>
+  <view name="devices"/>
+  <view name="sites"/>
+  <view name="alerts"/>
+  <view name="search"/>
+</nav>
