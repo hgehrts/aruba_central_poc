@@ -1,0 +1,28 @@
+model_prefix,fw_from,fixed_in,bug_id,issue,source_url
+AP-375,10.8.0.0,10.8.0.2,AOS-268874,Random crashes and reboots (memory corruption with long user-role names),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-567,10.4.1.5,10.8.0.2,AOS-265802,False radar detection: 5 GHz channel changes and client disconnects,https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-615,10.7.2.1,10.8.0.2,AOS-272759,Crash and reboot (soft lockup in the wireless driver),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-635,10.7.2.1,10.8.0.2,AOS-268983,Random reboot with kernel panic (NSS firmware crashed),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-635,10.4.1.11,10.8.0.2,AOS-274522,Crash and reboot (kernel panic: fatal exception in interrupt),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-655,10.5.1.1,10.8.0.2,AOS-268555,Crash and reboot after an internal watchdog dump,https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-655,10.4.1.8,10.8.0.2,AOS-272408,Crash and reboot (WLAN target exception),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-655,10.4.1.11,10.8.0.2,AOS-274522,Crash and reboot (kernel panic: fatal exception in interrupt),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-67,10.4.1.11,10.8.0.2,AOS-274522,Crash and reboot (kernel panic: fatal exception in interrupt),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-7,10.8.0.0,10.8.0.2,AOS-270216,"Crash (kernel panic, wireless driver assertion)",https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-7,10.8.0.0,10.8.0.2,AOS-273098,Crash caused by an oversized beacon template,https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-735,10.7.2.0,10.8.0.2,AOS-269884,"Crash and reboot (wireless driver assert, warm-reset)",https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-755,10.7.2.0,10.8.0.2,AOS-269884,"Crash and reboot (wireless driver assert, warm-reset)",https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-755,10.8.0.0,10.8.0.2,AOS-272368,Crash with a 320 MHz channel and FTM enabled,https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-755,10.7.2.2,10.8.0.2,AOS-272401,Repeated reboots (wireless driver assert),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html
+AP-615,10.7.2.1,10.8.1.2,AOS-274083,"Crash and reboot cycles (netdestination name too long, kernel panic)",https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-635,10.7.2.1,10.8.1.2,AOS-271856,Crash and reboot (WLAN target kernel panic),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-635,10.4.1.11,10.8.1.2,AOS-274222,Crash and reboot (WLAN target assertion),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-635,10.7.2.5,10.8.1.2,AOS-275494,Reboot with kernel panic (fatal exception),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-635,10.7.2.2,10.8.1.2,AOS-277455,Reboot (TPM operation timed out),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-7,10.8.1.0,10.8.1.2,AOS-276911,Crash and reboot with FTM enabled,https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-725,10.7.2.5,10.8.1.2,AOS-263255,Crash after the driver ran out of pool memory (probe-response suppression list),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-725,10.8.0.0,10.8.1.2,AOS-276388,Scheduler soft lockup causes a kernel panic and reboot,https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-735,10.8.0.0,10.8.1.2,AOS-274049,Intermittent reboots (wireless packet forwarding),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-735,10.8.0.0,10.8.1.2,AOS-276388,Scheduler soft lockup causes a kernel panic and reboot,https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-735,10.7.2.6,10.8.1.2,AOS-276958,Warm-reset with kernel panic (Wi-Fi driver packet mapping),https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html
+AP-755,10.7.2.2,10.8.1.2,AOS-273666,"Crash and reboot (BadAddr in skb_release_data, warm-reset)",https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html

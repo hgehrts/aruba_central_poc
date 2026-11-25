@@ -1,0 +1,756 @@
+<dashboard version="2" theme="dark">
+    <label>Overview</label>
+    <description>Current state of access points, switches and gateways, throughput, alerts, sites and syslog.</description>
+    <definition><![CDATA[
+{
+  "title": "Overview",
+  "description": "Current state of access points, switches and gateways, throughput, alerts, sites and syslog.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-24h,now"
+      }
+    },
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_on": {
+      "type": "ds.search",
+      "name": "APs online",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(_time) as last_poll latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip by serialNumber\n| where type=\"ACCESS_POINT\" AND status=\"ONLINE\" | stats count"
+      }
+    },
+    "ds_off": {
+      "type": "ds.search",
+      "name": "APs offline",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(_time) as last_poll latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip by serialNumber\n| where type=\"ACCESS_POINT\" AND status!=\"ONLINE\" | stats count"
+      }
+    },
+    "ds_off2": {
+      "type": "ds.search",
+      "name": "Switches and gateways offline",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(_time) as last_poll latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip by serialNumber\n| where type!=\"ACCESS_POINT\" AND status!=\"ONLINE\" | stats count"
+      }
+    },
+    "ds_clients": {
+      "type": "ds.search",
+      "name": "Clients",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| bin _time span=5m\n| stats latest(clientCount) as c by _time serialNumber\n| timechart span=5m sum(c) as clients\n| where isnotnull(clients)"
+      }
+    },
+    "ds_alerts": {
+      "type": "ds.search",
+      "name": "Open critical and major",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where state=\"Open\" AND (severity=\"Critical\" OR severity=\"Major\") | stats count"
+      }
+    },
+    "ds_slerr": {
+      "type": "ds.search",
+      "name": "Syslog errors",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| where aruba_severity=\"Error\" | stats count"
+      }
+    },
+    "ds_tp": {
+      "type": "ds.search",
+      "name": "AP throughput",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap_throughput\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| bin _time span=5m\n| stats avg(tx) as tx avg(rx) as rx by _time serialNumber\n| timechart span=5m sum(tx) as \"Transmit (bit/s)\" sum(rx) as \"Receive (bit/s)\""
+      }
+    },
+    "ds_sev": {
+      "type": "ds.search",
+      "name": "Alerts by severity",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where state=\"Open\" | stats count by severity"
+      }
+    },
+    "ds_sites": {
+      "type": "ds.search",
+      "name": "Sites",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:site_health\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(health.groups{}.name) as hn latest(health.groups{}.value) as hv latest(clients.count) as Clients latest(devices.count) as Devices latest(alerts.totalCount) as Alerts by siteName\n| eval Poor=coalesce(tonumber(mvindex(hv,mvfind(hn,\"Poor\"))),0)\n| table siteName Devices Clients Alerts Poor\n| sort - Poor - Alerts - Clients\n| rename siteName as Site, Poor as \"Poor %\""
+      }
+    },
+    "ds_alist": {
+      "type": "ds.search",
+      "name": "Latest alerts",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| sort 0 - created | head 50\n| eval Created=strftime(created,\"%Y-%m-%d %H:%M\")\n| table Created severity state name site id\n| rename severity as Severity, state as State, name as Alert, site as Site, id as AlertID"
+      }
+    },
+    "ds_cpu": {
+      "type": "ds.search",
+      "name": "CPU and memory",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| timechart span=5m max(cpuUtilization) as \"Max CPU %\" max(memoryUtilization) as \"Max memory %\""
+      }
+    },
+    "ds_sl": {
+      "type": "ds.search",
+      "name": "Syslog by severity",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| timechart count by aruba_severity"
+      }
+    }
+  },
+  "visualizations": {
+    "v_on": {
+      "type": "splunk.singlevalue",
+      "title": "APs online",
+      "dataSources": {
+        "primary": "ds_on"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/access_points?form.status=ONLINE&form.site=$site$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_off": {
+      "type": "splunk.singlevalue",
+      "title": "APs offline",
+      "dataSources": {
+        "primary": "ds_off"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/offline?form.site=$site$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_off2": {
+      "type": "splunk.singlevalue",
+      "title": "Switches and gateways offline",
+      "dataSources": {
+        "primary": "ds_off2"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/offline?form.site=$site$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_clients": {
+      "type": "splunk.singlevalue",
+      "title": "Wireless clients now",
+      "dataSources": {
+        "primary": "ds_clients"
+      },
+      "options": {
+        "sparklineDisplay": "below",
+        "trendDisplay": "absolute"
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/access_points?form.site=$site$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_alerts": {
+      "type": "splunk.singlevalue",
+      "title": "Open critical and major alerts",
+      "dataSources": {
+        "primary": "ds_alerts"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/alerts?form.state=Open&form.site=$site$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_slerr": {
+      "type": "splunk.singlevalue",
+      "title": "Syslog errors",
+      "dataSources": {
+        "primary": "ds_slerr"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/syslog?form.level=Error",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_tp": {
+      "type": "splunk.area",
+      "title": "Access point throughput (all interfaces)",
+      "dataSources": {
+        "primary": "ds_tp"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked",
+        "nullValueDisplay": "connect",
+        "seriesColorsByField": {
+          "Transmit (bit/s)": "#1182F3",
+          "Receive (bit/s)": "#2EB5A8"
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/throughput?form.site=$site$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_sev": {
+      "type": "splunk.pie",
+      "title": "Open alerts by severity (click for the list)",
+      "dataSources": {
+        "primary": "ds_sev"
+      },
+      "options": {
+        "labelDisplay": "valuesAndPercentage",
+        "showDonutHole": true,
+        "seriesColorsByField": {
+          "Critical": "#DC4E41",
+          "Major": "#F1813F",
+          "Minor": "#F8BE34",
+          "Warning": "#F8BE34",
+          "Info": "#1182F3"
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/alerts?form.state=Open&form.severity=$row.severity.value$&form.site=$site$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_sites": {
+      "type": "splunk.table",
+      "title": "Sites (click a row to filter this page)",
+      "dataSources": {
+        "primary": "ds_sites"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Poor %": {
+            "rowBackgroundColors": "> table | seriesByName(\"Poor %\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Poor %\") | rangeValue(r0t)"
+          },
+          "Alerts": {
+            "rowBackgroundColors": "> table | seriesByName(\"Alerts\") | rangeValue(r1)",
+            "rowColors": "> table | seriesByName(\"Alerts\") | rangeValue(r1t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "transparent",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 1
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 1
+          }
+        ],
+        "r1": [
+          {
+            "value": "transparent",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ],
+        "r1t": [
+          {
+            "value": "#FFFFFF",
+            "to": 1
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "site",
+                "key": "row.Site.value"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_alist": {
+      "type": "splunk.table",
+      "title": "Latest alerts (click a row for root cause and action)",
+      "dataSources": {
+        "primary": "ds_alist"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Severity": {
+            "rowBackgroundColors": "> table | seriesByName(\"Severity\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Severity\") | matchValue(m0t)"
+          },
+          "State": {
+            "rowBackgroundColors": "> table | seriesByName(\"State\") | matchValue(m1)",
+            "rowColors": "> table | seriesByName(\"State\") | matchValue(m1t)"
+          },
+          "AlertID": {
+            "width": 140
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "Critical",
+            "value": "#DC4E41"
+          },
+          {
+            "match": "Major",
+            "value": "#F1813F"
+          },
+          {
+            "match": "Minor",
+            "value": "#D99B1E"
+          },
+          {
+            "match": "Warning",
+            "value": "#D99B1E"
+          },
+          {
+            "match": "Info",
+            "value": "#1182F3"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "Critical",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Major",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Minor",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Warning",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Info",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ],
+        "m1": [
+          {
+            "match": "Open",
+            "value": "#F1813F"
+          },
+          {
+            "match": "Cleared",
+            "value": "#53A051"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m1t": [
+          {
+            "match": "Open",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Cleared",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/alerts?form.alert_id=$row.AlertID.value$&form.site=*",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_cpu": {
+      "type": "splunk.line",
+      "title": "Access points: max CPU and memory (%)",
+      "dataSources": {
+        "primary": "ds_cpu"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "nullValueDisplay": "connect",
+        "seriesColorsByField": {
+          "Max CPU %": "#F1813F",
+          "Max memory %": "#7B56DB"
+        },
+        "yAxisMax": 100,
+        "yAxisMin": 0
+      }
+    },
+    "v_sl": {
+      "type": "splunk.column",
+      "title": "Aruba syslog by severity (click for events)",
+      "dataSources": {
+        "primary": "ds_sl"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked",
+        "seriesColorsByField": {
+          "Error": "#DC4E41",
+          "Warning": "#F8BE34",
+          "Info": "#1182F3"
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/syslog?form.level=$name$",
+            "newTab": false
+          }
+        }
+      ]
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time",
+      "input_site"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_on",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_off",
+            "type": "block",
+            "position": {
+              "x": 200,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_off2",
+            "type": "block",
+            "position": {
+              "x": 400,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_clients",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_alerts",
+            "type": "block",
+            "position": {
+              "x": 800,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_slerr",
+            "type": "block",
+            "position": {
+              "x": 1000,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_tp",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 140,
+              "w": 750,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_sev",
+            "type": "block",
+            "position": {
+              "x": 750,
+              "y": 140,
+              "w": 450,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_sites",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 440,
+              "w": 550,
+              "h": 330
+            }
+          },
+          {
+            "item": "v_alist",
+            "type": "block",
+            "position": {
+              "x": 550,
+              "y": 440,
+              "w": 650,
+              "h": 330
+            }
+          },
+          {
+            "item": "v_cpu",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 770,
+              "w": 600,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_sl",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 770,
+              "w": 600,
+              "h": 280
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Overview"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

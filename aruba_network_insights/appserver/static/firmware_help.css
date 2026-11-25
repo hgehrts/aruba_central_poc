@@ -1,0 +1,12 @@
+.aruba-help { max-width: 1100px; line-height: 1.55; font-size: 14px; }
+.aruba-help h2 { font-size: 20px; margin-top: 28px; padding-bottom: 6px; border-bottom: 1px solid rgba(128,128,128,.35); }
+.aruba-help h3 { font-size: 16px; margin-top: 22px; }
+.aruba-help code, .aruba-help pre { font-family: Menlo, Consolas, monospace; background: rgba(128,128,128,.25) !important; color: inherit !important; border: none !important; border-radius: 3px; }
+.aruba-help code { padding: 1px 5px; font-size: 12.5px; }
+.aruba-help pre { padding: 10px 14px; overflow-x: auto; font-size: 12.5px; white-space: pre; }
+.aruba-help blockquote { margin: 14px 0; padding: 8px 16px; border-left: 4px solid #D99B1E; background: rgba(217,155,30,.12); }
+.aruba-help table.aruba-help-table { border-collapse: collapse; margin: 12px 0 18px 0; width: 100%; }
+.aruba-help table.aruba-help-table th, .aruba-help table.aruba-help-table td { border: 1px solid rgba(128,128,128,.35); padding: 6px 10px; text-align: left; vertical-align: top; }
+.aruba-help table.aruba-help-table th { background: rgba(128,128,128,.22); }
+.aruba-help ul, .aruba-help ol { margin: 8px 0 12px 22px; }
+.aruba-help li { margin: 4px 0; }

@@ -1,0 +1,560 @@
+<dashboard version="2" theme="dark">
+    <label>AP stability</label>
+    <description>Access point reboots derived from uptime, reboot reasons, crash messages from syslog and rates by model and firmware.</description>
+    <definition><![CDATA[
+{
+  "title": "AP stability",
+  "description": "Access point reboots derived from uptime, reboot reasons, crash messages from syslog and rates by model and firmware.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-24h,now"
+      }
+    },
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_same": {
+      "type": "ds.search",
+      "name": "Reboots same firmware",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" status=ONLINE uptimeInMillis>0\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| sort 0 serialNumber _time\n| streamstats current=f last(uptimeInMillis) as prev_up last(firmwareVersion) as prev_fw last(clientCount) as prev_clients by serialNumber\n| eval reboot=if(isnotnull(prev_up) AND uptimeInMillis<prev_up-60000,1,0)\n| eval reboot_type=case(reboot=0,null(),prev_fw=firmwareVersion,\"Same firmware\",true(),\"After firmware change\")\n| eval reboot_time=_time-uptimeInMillis/1000\n| stats count(eval(reboot_type=\"Same firmware\")) as reboots"
+      }
+    },
+    "ds_aps": {
+      "type": "ds.search",
+      "name": "APs with reboots",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" status=ONLINE uptimeInMillis>0\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| sort 0 serialNumber _time\n| streamstats current=f last(uptimeInMillis) as prev_up last(firmwareVersion) as prev_fw last(clientCount) as prev_clients by serialNumber\n| eval reboot=if(isnotnull(prev_up) AND uptimeInMillis<prev_up-60000,1,0)\n| eval reboot_type=case(reboot=0,null(),prev_fw=firmwareVersion,\"Same firmware\",true(),\"After firmware change\")\n| eval reboot_time=_time-uptimeInMillis/1000\n| where reboot_type=\"Same firmware\" | stats dc(serialNumber) as aps"
+      }
+    },
+    "ds_fw": {
+      "type": "ds.search",
+      "name": "Reboots after firmware change",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" status=ONLINE uptimeInMillis>0\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| sort 0 serialNumber _time\n| streamstats current=f last(uptimeInMillis) as prev_up last(firmwareVersion) as prev_fw last(clientCount) as prev_clients by serialNumber\n| eval reboot=if(isnotnull(prev_up) AND uptimeInMillis<prev_up-60000,1,0)\n| eval reboot_type=case(reboot=0,null(),prev_fw=firmwareVersion,\"Same firmware\",true(),\"After firmware change\")\n| eval reboot_time=_time-uptimeInMillis/1000\n| stats count(eval(reboot_type=\"After firmware change\")) as reboots"
+      }
+    },
+    "ds_slc": {
+      "type": "ds.search",
+      "name": "Crash messages in syslog",
+      "options": {
+        "query": "`aruba_syslog` (\"reboot*\" OR \"panic\" OR \"watchdog\" OR \"crash*\" OR \"KERNEL(\" OR \"restarting\")\n| `aruba_syslog_fields`\n| where aruba_severity!=\"Info\" | stats count"
+      }
+    },
+    "ds_time": {
+      "type": "ds.search",
+      "name": "Reboots over time",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" status=ONLINE uptimeInMillis>0\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| sort 0 serialNumber _time\n| streamstats current=f last(uptimeInMillis) as prev_up last(firmwareVersion) as prev_fw last(clientCount) as prev_clients by serialNumber\n| eval reboot=if(isnotnull(prev_up) AND uptimeInMillis<prev_up-60000,1,0)\n| eval reboot_type=case(reboot=0,null(),prev_fw=firmwareVersion,\"Same firmware\",true(),\"After firmware change\")\n| eval reboot_time=_time-uptimeInMillis/1000\n| where reboot=1\n| timechart minspan=1h count by reboot_type"
+      }
+    },
+    "ds_cohort": {
+      "type": "ds.search",
+      "name": "Reboots by model and firmware",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" status=ONLINE uptimeInMillis>0\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| sort 0 serialNumber _time\n| streamstats current=f last(uptimeInMillis) as prev_up last(firmwareVersion) as prev_fw last(clientCount) as prev_clients by serialNumber\n| eval reboot=if(isnotnull(prev_up) AND uptimeInMillis<prev_up-60000,1,0)\n| eval reboot_type=case(reboot=0,null(),prev_fw=firmwareVersion,\"Same firmware\",true(),\"After firmware change\")\n| eval reboot_time=_time-uptimeInMillis/1000\n| stats dc(serialNumber) as APs count(eval(reboot_type=\"Same firmware\")) as reboots by model firmwareVersion\n| eval reboots_per_100_APs=round(100*reboots/APs,1)\n| sort - reboots_per_100_APs\n| rename model as Model, firmwareVersion as Firmware, reboots as \"Reboots (same firmware)\", reboots_per_100_APs as \"Per 100 APs\""
+      }
+    },
+    "ds_top": {
+      "type": "ds.search",
+      "name": "Top rebooting APs",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" status=ONLINE uptimeInMillis>0\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| sort 0 serialNumber _time\n| streamstats current=f last(uptimeInMillis) as prev_up last(firmwareVersion) as prev_fw last(clientCount) as prev_clients by serialNumber\n| eval reboot=if(isnotnull(prev_up) AND uptimeInMillis<prev_up-60000,1,0)\n| eval reboot_type=case(reboot=0,null(),prev_fw=firmwareVersion,\"Same firmware\",true(),\"After firmware change\")\n| eval reboot_time=_time-uptimeInMillis/1000\n| where reboot_type=\"Same firmware\"\n| stats count as Reboots latest(reboot_time) as lr latest(deviceName) as AP latest(model) as Model latest(siteName) as Site latest(firmwareVersion) as Firmware max(prev_clients) as clients_before by serialNumber\n| eval \"Last reboot\"=strftime(lr,\"%Y-%m-%d %H:%M\")\n| table serialNumber AP Model Site Firmware Reboots \"Last reboot\" clients_before\n| sort - Reboots\n| rename clients_before as \"Clients before\""
+      }
+    },
+    "ds_reason": {
+      "type": "ds.search",
+      "name": "Last reboot reason",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(lastRebootReason) as reason by serialNumber\n| eval reason=if(isnull(reason) OR reason=\"\" OR reason=\"null\",\"(not reported)\",reason)\n| stats count by reason\n| sort - count"
+      }
+    },
+    "ds_crash": {
+      "type": "ds.search",
+      "name": "Crash-like reasons",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(lastRebootReason) as reason latest(deviceName) as AP latest(model) as Model latest(siteName) as Site latest(firmwareVersion) as Firmware latest(uptimeInMillis) as up by serialNumber\n| where match(reason,\"(?i)panic|crash|assert|watchdog|fatal|oops\")\n| eval \"Uptime (h)\"=round(up/3600000,1)\n| table serialNumber AP Model Site Firmware reason \"Uptime (h)\"\n| rename reason as \"Last reboot reason\""
+      }
+    },
+    "ds_sl": {
+      "type": "ds.search",
+      "name": "Syslog reboot messages",
+      "options": {
+        "query": "`aruba_syslog` (\"reboot*\" OR \"panic\" OR \"watchdog\" OR \"crash*\" OR \"KERNEL(\" OR \"restarting\")\n| `aruba_syslog_fields`\n| eval Device=coalesce(aruba_ap,aruba_device)\n| sort - _time\n| eval Time=strftime(_time,\"%Y-%m-%d %H:%M:%S\")\n| table Time Device aruba_level aruba_process aruba_message\n| rename aruba_level as Level, aruba_process as Process, aruba_message as Message"
+      }
+    }
+  },
+  "visualizations": {
+    "v_same": {
+      "type": "splunk.singlevalue",
+      "title": "Reboots on the same firmware",
+      "dataSources": {
+        "primary": "ds_same"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_aps": {
+      "type": "splunk.singlevalue",
+      "title": "Access points that rebooted",
+      "dataSources": {
+        "primary": "ds_aps"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#F8BE34",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_fw": {
+      "type": "splunk.singlevalue",
+      "title": "Reboots after a firmware change",
+      "dataSources": {
+        "primary": "ds_fw"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#1182F3"
+          }
+        ]
+      }
+    },
+    "v_slc": {
+      "type": "splunk.singlevalue",
+      "title": "Crash and watchdog messages (syslog)",
+      "dataSources": {
+        "primary": "ds_slc"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_time": {
+      "type": "splunk.column",
+      "title": "Reboots over time",
+      "dataSources": {
+        "primary": "ds_time"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked",
+        "seriesColorsByField": {
+          "Same firmware": "#F1813F",
+          "After firmware change": "#1182F3"
+        }
+      }
+    },
+    "v_cohort": {
+      "type": "splunk.table",
+      "title": "Reboots by model and firmware",
+      "dataSources": {
+        "primary": "ds_cohort"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Per 100 APs": {
+            "rowBackgroundColors": "> table | seriesByName(\"Per 100 APs\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Per 100 APs\") | rangeValue(r0t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "transparent",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 1
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_top": {
+      "type": "splunk.table",
+      "title": "Access points with reboots on the same firmware (click for the AP)",
+      "dataSources": {
+        "primary": "ds_top"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Reboots": {
+            "rowBackgroundColors": "> table | seriesByName(\"Reboots\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Reboots\") | rangeValue(r0t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "#D99B1E",
+            "to": 3
+          },
+          {
+            "value": "#DC4E41",
+            "from": 3
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 3
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 3
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/access_point?form.serial=$row.serialNumber.value$&form.site=*",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_reason": {
+      "type": "splunk.bar",
+      "title": "Last reboot reason (latest per access point)",
+      "dataSources": {
+        "primary": "ds_reason"
+      },
+      "options": {
+        "legendDisplay": "off",
+        "x": "> primary | seriesByName('reason')",
+        "y": "> primary | frameBySeriesNames('count')",
+        "seriesColorsByField": {
+          "count": "#7B56DB"
+        }
+      }
+    },
+    "v_crash": {
+      "type": "splunk.table",
+      "title": "Last reboot reason looks like a crash (click for the AP)",
+      "dataSources": {
+        "primary": "ds_crash"
+      },
+      "options": {
+        "count": 8
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/access_point?form.serial=$row.serialNumber.value$&form.site=*",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_sl": {
+      "type": "splunk.table",
+      "title": "Syslog: reboot, crash and watchdog messages (click for the raw events)",
+      "dataSources": {
+        "primary": "ds_sl"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Level": {
+            "rowBackgroundColors": "> table | seriesByName(\"Level\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Level\") | matchValue(m0t)"
+          },
+          "Message": {
+            "width": 600
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "CRIT",
+            "value": "#DC4E41"
+          },
+          {
+            "match": "ERRS",
+            "value": "#F1813F"
+          },
+          {
+            "match": "WARN",
+            "value": "#D99B1E"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "CRIT",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "ERRS",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "WARN",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "`aruba_syslog` | `aruba_syslog_fields` | search aruba_device=\"$row.Device.value$\" OR aruba_ap=\"$row.Device.value$\"",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_note": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "Reboots are derived from uptime: a drop of more than one minute between two polls while the access point was online. They are indicators and depend on the poll interval of the Wireless input. A drop together with a new firmware version is counted as *after a firmware change*. `lastRebootReason` is not reported for every access point. Syslog messages (kernel panic, watchdog, process restarts) show *why* an access point rebooted, if Aruba syslog is configured.",
+        "fontSize": "small"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time",
+      "input_site"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_same",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_aps",
+            "type": "block",
+            "position": {
+              "x": 300,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_fw",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_slc",
+            "type": "block",
+            "position": {
+              "x": 900,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_time",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 140,
+              "w": 1200,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_cohort",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 420,
+              "w": 550,
+              "h": 330
+            }
+          },
+          {
+            "item": "v_top",
+            "type": "block",
+            "position": {
+              "x": 550,
+              "y": 420,
+              "w": 650,
+              "h": 330
+            }
+          },
+          {
+            "item": "v_reason",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 750,
+              "w": 550,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_crash",
+            "type": "block",
+            "position": {
+              "x": 550,
+              "y": 750,
+              "w": 650,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_sl",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1050,
+              "w": 1200,
+              "h": 320
+            }
+          },
+          {
+            "item": "v_note",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1370,
+              "w": 1200,
+              "h": 80
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "AP stability"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

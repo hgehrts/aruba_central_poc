@@ -1,0 +1,525 @@
+<dashboard version="2" theme="dark">
+    <label>Offline devices</label>
+    <description>Devices that are not online, how long, whether many went offline together, and whether they still send syslog.</description>
+    <definition><![CDATA[
+{
+  "title": "Offline devices",
+  "description": "Devices that are not online, how long, whether many went offline together, and whether they still send syslog.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-24h,now"
+      }
+    },
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    },
+    "input_thr": {
+      "type": "input.text",
+      "title": "Many-offline threshold (%)",
+      "options": {
+        "token": "thr",
+        "defaultValue": "50"
+      }
+    },
+    "input_flap": {
+      "type": "input.text",
+      "title": "Flapping: state changes",
+      "options": {
+        "token": "flap",
+        "defaultValue": "4"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_total": {
+      "type": "ds.search",
+      "name": "Devices",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(_time) as last_poll latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip by serialNumber\n| stats count"
+      }
+    },
+    "ds_off": {
+      "type": "ds.search",
+      "name": "Offline",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(_time) as last_poll latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip by serialNumber\n| where status!=\"ONLINE\" | stats count"
+      }
+    },
+    "ds_pct": {
+      "type": "ds.search",
+      "name": "Offline share",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(_time) as last_poll latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip by serialNumber\n| stats count as total count(eval(status!=\"ONLINE\")) as off\n| eval pct=if(total>0,round(100*off/total,1),0)\n| fields pct"
+      }
+    },
+    "ds_slive": {
+      "type": "ds.search",
+      "name": "Offline but sending syslog",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(_time) as last_poll latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip by serialNumber\n| where status!=\"ONLINE\"\n| eval k=mvappend(lower(name),ip) | mvexpand k\n| join type=left max=1 k [search `aruba_syslog` earliest=-60m | `aruba_syslog_fields` | eval k=mvdedup(mvappend(lower(aruba_device),aruba_device_ip,lower(host))) | mvexpand k | stats max(_time) as last_syslog count as syslog_events latest(aruba_message) as last_message by k]\n| stats max(last_syslog) as last_syslog sum(syslog_events) as syslog_events latest(last_message) as last_message values(name) as name values(type) as type values(site) as site values(ip) as ip by serialNumber\n| where syslog_events>0 | stats count"
+      }
+    },
+    "ds_list": {
+      "type": "ds.search",
+      "name": "Offline devices",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\"))\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| rename siteName as site, deviceName as name\n| stats latest(status) as status latest(name) as name latest(model) as model latest(site) as site latest(type) as type max(eval(if(status=\"ONLINE\",_time,null()))) as last_online latest(_time) as last_poll by serialNumber\n| where status!=\"ONLINE\"\n| eval \"Last online\"=if(isnull(last_online),\"not online in the time range\",strftime(last_online,\"%Y-%m-%d %H:%M\")), \"Offline for\"=if(isnull(last_online),\"-\",tostring(now()-last_online,\"duration\")), \"Last poll\"=strftime(last_poll,\"%Y-%m-%d %H:%M\")\n| table serialNumber name type model site status \"Last online\" \"Offline for\" \"Last poll\"\n| sort type site name"
+      }
+    },
+    "ds_sites": {
+      "type": "ds.search",
+      "name": "Sites",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(_time) as last_poll latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip by serialNumber\n| stats count as devices count(eval(status!=\"ONLINE\")) as offline by site\n| where offline>0\n| eval offline_pct=round(100*offline/devices,1)\n| eval Assessment=if(offline_pct>=$thr$ AND offline>=3,\"Many devices offline at once: check uplink, power and Central status\",\"\")\n| sort - offline_pct\n| rename site as Site, devices as Devices, offline as Offline, offline_pct as \"Offline %\""
+      }
+    },
+    "ds_wave": {
+      "type": "ds.search",
+      "name": "Went offline",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\"))\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| rename siteName as site, deviceName as name\n| sort 0 serialNumber _time\n| streamstats current=f last(status) as prev by serialNumber\n| where status!=\"ONLINE\" AND prev=\"ONLINE\"\n| timechart minspan=5m dc(serialNumber) as \"Devices that went offline\" dc(site) as Sites"
+      }
+    },
+    "ds_live": {
+      "type": "ds.search",
+      "name": "Still sending syslog",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(_time) as last_poll latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip by serialNumber\n| where status!=\"ONLINE\"\n| eval k=mvappend(lower(name),ip) | mvexpand k\n| join type=left max=1 k [search `aruba_syslog` earliest=-60m | `aruba_syslog_fields` | eval k=mvdedup(mvappend(lower(aruba_device),aruba_device_ip,lower(host))) | mvexpand k | stats max(_time) as last_syslog count as syslog_events latest(aruba_message) as last_message by k]\n| stats max(last_syslog) as last_syslog sum(syslog_events) as syslog_events latest(last_message) as last_message values(name) as name values(type) as type values(site) as site values(ip) as ip by serialNumber\n| where syslog_events>0\n| eval \"Last syslog\"=strftime(last_syslog,\"%Y-%m-%d %H:%M\")\n| table serialNumber name type site \"Last syslog\" syslog_events last_message\n| sort - syslog_events\n| rename syslog_events as \"Syslog events (60 min)\", last_message as \"Last message\""
+      }
+    },
+    "ds_flap": {
+      "type": "ds.search",
+      "name": "Flapping",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\"))\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| rename siteName as site, deviceName as name\n| sort 0 serialNumber _time\n| streamstats current=f last(status) as prev by serialNumber\n| where isnotnull(prev) AND status!=prev\n| stats count as state_changes latest(name) as name latest(type) as type latest(model) as model latest(site) as site by serialNumber\n| where state_changes>=$flap$\n| sort - state_changes\n| table serialNumber name type model site state_changes\n| rename state_changes as \"State changes\""
+      }
+    }
+  },
+  "visualizations": {
+    "v_total": {
+      "type": "splunk.singlevalue",
+      "title": "Devices",
+      "dataSources": {
+        "primary": "ds_total"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_off": {
+      "type": "splunk.singlevalue",
+      "title": "Offline now",
+      "dataSources": {
+        "primary": "ds_off"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_pct": {
+      "type": "splunk.singlevalue",
+      "title": "Offline share",
+      "dataSources": {
+        "primary": "ds_pct"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "unit": "%",
+        "unitPosition": "after",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 5
+          },
+          {
+            "value": "#F8BE34",
+            "from": 5,
+            "to": 20
+          },
+          {
+            "value": "#DC4E41",
+            "from": 20
+          }
+        ]
+      }
+    },
+    "v_slive": {
+      "type": "splunk.singlevalue",
+      "title": "Offline in Central, still sending syslog",
+      "dataSources": {
+        "primary": "ds_slive"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_list": {
+      "type": "splunk.table",
+      "title": "Offline devices (click a row for its Central events and syslog)",
+      "dataSources": {
+        "primary": "ds_list"
+      },
+      "options": {
+        "count": 10,
+        "columnFormat": {
+          "status": {
+            "rowBackgroundColors": "> table | seriesByName(\"status\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"status\") | matchValue(m0t)"
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "ONLINE",
+            "value": "#53A051"
+          },
+          {
+            "match": "OFFLINE",
+            "value": "#DC4E41"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "ONLINE",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "OFFLINE",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "(`aruba_central_index` serialNumber=\"$row.serialNumber.value$\") OR (`aruba_syslog` \"$row.name.value$\")\n| table _time index sourcetype host status deviceName _raw",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_sites": {
+      "type": "splunk.table",
+      "title": "Sites with offline devices (click for the site overview)",
+      "dataSources": {
+        "primary": "ds_sites"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Offline %": {
+            "rowBackgroundColors": "> table | seriesByName(\"Offline %\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Offline %\") | rangeValue(r0t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "#D99B1E",
+            "to": 20
+          },
+          {
+            "value": "#DC4E41",
+            "from": 20
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 20
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 20
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/overview?form.site=$row.Site.value$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_wave": {
+      "type": "splunk.column",
+      "title": "Devices that went offline (5 minute bins)",
+      "dataSources": {
+        "primary": "ds_wave"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "seriesColorsByField": {
+          "Devices that went offline": "#DC4E41",
+          "Sites": "#F1813F"
+        }
+      }
+    },
+    "v_live": {
+      "type": "splunk.table",
+      "title": "Offline in Central but still sending syslog: the device is up, check its path to Central",
+      "dataSources": {
+        "primary": "ds_live"
+      },
+      "options": {
+        "count": 6,
+        "columnFormat": {
+          "Last message": {
+            "width": 420
+          }
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "`aruba_syslog` | `aruba_syslog_fields` | search aruba_device=\"$row.name.value$\" OR aruba_ap=\"$row.name.value$\"",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_flap": {
+      "type": "splunk.table",
+      "title": "Devices that changed state often",
+      "dataSources": {
+        "primary": "ds_flap"
+      },
+      "options": {
+        "count": 6
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "(`aruba_central_index` serialNumber=\"$row.serialNumber.value$\") OR (`aruba_syslog` \"$row.name.value$\")\n| table _time index sourcetype host status deviceName _raw",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_note": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "Access points come from the Wireless input, switches and gateways from the Inventory input (hourly by default), so their status can be up to an hour old. Many devices going offline together, especially across several sites, points to a connectivity or Central problem and not to a failure at each site. Syslog is a second, independent source: a device that Central lists as offline but that still sends syslog is up and has lost its connection to Central (uplink, DNS, proxy, firewall). Syslog devices are matched by name or IP address.",
+        "fontSize": "small"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time",
+      "input_site",
+      "input_thr",
+      "input_flap"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_total",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_off",
+            "type": "block",
+            "position": {
+              "x": 300,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_pct",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_slive",
+            "type": "block",
+            "position": {
+              "x": 900,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_list",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 140,
+              "w": 1200,
+              "h": 360
+            }
+          },
+          {
+            "item": "v_sites",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 500,
+              "w": 600,
+              "h": 320
+            }
+          },
+          {
+            "item": "v_wave",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 500,
+              "w": 600,
+              "h": 320
+            }
+          },
+          {
+            "item": "v_live",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 820,
+              "w": 700,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_flap",
+            "type": "block",
+            "position": {
+              "x": 700,
+              "y": 820,
+              "w": 500,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_note",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1120,
+              "w": 1200,
+              "h": 90
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Offline devices"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

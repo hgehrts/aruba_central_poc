@@ -1,0 +1,736 @@
+<dashboard version="2" theme="dark">
+    <label>Capacity and load</label>
+    <description>Clients, CPU, memory and PoE draw per access point and site, with thresholds you can change, plus client disconnect reasons from syslog.</description>
+    <definition><![CDATA[
+{
+  "title": "Capacity and load",
+  "description": "Clients, CPU, memory and PoE draw per access point and site, with thresholds you can change, plus client disconnect reasons from syslog.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-24h,now"
+      }
+    },
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    },
+    "input_c": {
+      "type": "input.text",
+      "title": "Clients per AP",
+      "options": {
+        "token": "cthr",
+        "defaultValue": "75"
+      }
+    },
+    "input_p": {
+      "type": "input.text",
+      "title": "CPU %",
+      "options": {
+        "token": "pthr",
+        "defaultValue": "80"
+      }
+    },
+    "input_m": {
+      "type": "input.text",
+      "title": "Memory %",
+      "options": {
+        "token": "mthr",
+        "defaultValue": "85"
+      }
+    },
+    "input_g": {
+      "type": "input.text",
+      "title": "Memory growth (points)",
+      "options": {
+        "token": "gthr",
+        "defaultValue": "10"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_cl": {
+      "type": "ds.search",
+      "name": "Clients over",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(model) as Model latest(siteName) as Site latest(clientCount) as clients latest(cpuUtilization) as cpu latest(memoryUtilization) as mem latest(powerConsumption) as watts latest(status) as status by serialNumber\n| eval clients=tonumber(clients), cpu=tonumber(cpu), mem=tonumber(mem), watts=tonumber(watts)\n| where clients>=$cthr$ | stats count"
+      }
+    },
+    "ds_cpu": {
+      "type": "ds.search",
+      "name": "CPU over",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(model) as Model latest(siteName) as Site latest(clientCount) as clients latest(cpuUtilization) as cpu latest(memoryUtilization) as mem latest(powerConsumption) as watts latest(status) as status by serialNumber\n| eval clients=tonumber(clients), cpu=tonumber(cpu), mem=tonumber(mem), watts=tonumber(watts)\n| where cpu>=$pthr$ | stats count"
+      }
+    },
+    "ds_mem": {
+      "type": "ds.search",
+      "name": "Memory over",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(model) as Model latest(siteName) as Site latest(clientCount) as clients latest(cpuUtilization) as cpu latest(memoryUtilization) as mem latest(powerConsumption) as watts latest(status) as status by serialNumber\n| eval clients=tonumber(clients), cpu=tonumber(cpu), mem=tonumber(mem), watts=tonumber(watts)\n| where mem>=$mthr$ | stats count"
+      }
+    },
+    "ds_over": {
+      "type": "ds.search",
+      "name": "Over threshold",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(model) as Model latest(siteName) as Site latest(clientCount) as clients latest(cpuUtilization) as cpu latest(memoryUtilization) as mem latest(powerConsumption) as watts latest(status) as status by serialNumber\n| eval clients=tonumber(clients), cpu=tonumber(cpu), mem=tonumber(mem), watts=tonumber(watts)\n| where clients>=$cthr$ OR cpu>=$pthr$ OR mem>=$mthr$\n| eval Reason=mvappend(if(clients>=$cthr$,\"clients\",null()),if(cpu>=$pthr$,\"CPU\",null()),if(mem>=$mthr$,\"memory\",null()))\n| table serialNumber AP Model Site clients cpu mem Reason\n| sort - clients\n| rename clients as Clients, cpu as \"CPU %\", mem as \"Memory %\""
+      }
+    },
+    "ds_hist": {
+      "type": "ds.search",
+      "name": "Client distribution",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(model) as Model latest(siteName) as Site latest(clientCount) as clients latest(cpuUtilization) as cpu latest(memoryUtilization) as mem latest(powerConsumption) as watts latest(status) as status by serialNumber\n| eval clients=tonumber(clients), cpu=tonumber(cpu), mem=tonumber(mem), watts=tonumber(watts)\n| where isnotnull(clients)\n| eval bucket=floor(clients/10)*10\n| stats count as APs by bucket\n| sort bucket\n| eval \"Clients per AP\"=bucket.\" to \".(bucket+9)\n| fields \"Clients per AP\" APs"
+      }
+    },
+    "ds_mem_t": {
+      "type": "ds.search",
+      "name": "Memory by model",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| timechart minspan=1h avg(memoryUtilization) by model limit=8"
+      }
+    },
+    "ds_rise": {
+      "type": "ds.search",
+      "name": "Memory rising",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" status=ONLINE uptimeInMillis>0\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats earliest(memoryUtilization) as m0 latest(memoryUtilization) as m1 earliest(uptimeInMillis) as u0 latest(uptimeInMillis) as u1 latest(deviceName) as AP latest(model) as Model latest(siteName) as Site latest(firmwareVersion) as Firmware by serialNumber\n| eval m0=tonumber(m0), m1=tonumber(m1), growth=m1-m0\n| where u1>u0 AND growth>=$gthr$\n| table serialNumber AP Model Site Firmware m0 m1 growth\n| sort - growth\n| rename m0 as \"Memory % at start\", m1 as \"Memory % now\", growth as \"Growth (points)\""
+      }
+    },
+    "ds_sites": {
+      "type": "ds.search",
+      "name": "Sites",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(model) as Model latest(siteName) as Site latest(clientCount) as clients latest(cpuUtilization) as cpu latest(memoryUtilization) as mem latest(powerConsumption) as watts latest(status) as status by serialNumber\n| eval clients=tonumber(clients), cpu=tonumber(cpu), mem=tonumber(mem), watts=tonumber(watts)\n| stats count as APs sum(clients) as Clients avg(cpu) as \"Avg CPU %\" avg(mem) as \"Avg memory %\" sum(watts) as \"PoE draw (W)\" by Site\n| eval \"Clients per AP\"=round(Clients/APs,1), \"Avg CPU %\"=round('Avg CPU %',1), \"Avg memory %\"=round('Avg memory %',1), \"PoE draw (W)\"=round('PoE draw (W)',1)\n| sort - \"Clients per AP\""
+      }
+    },
+    "ds_disc": {
+      "type": "ds.search",
+      "name": "Disconnect reasons",
+      "options": {
+        "query": "`aruba_syslog` (\"Deauth\" OR \"Disassoc\")\n| `aruba_syslog_fields`\n| rex field=aruba_message \"Reason (?<Reason>.+)$\"\n| stats count by Reason\n| sort - count | head 10"
+      }
+    },
+    "ds_rc": {
+      "type": "ds.search",
+      "name": "Resource constrained",
+      "options": {
+        "query": "`aruba_syslog` \"resource constrained\"\n| `aruba_syslog_fields`\n| stats count as Denied latest(_time) as last by aruba_ap\n| eval Last=strftime(last,\"%Y-%m-%d %H:%M\")\n| table aruba_ap Denied Last\n| sort - Denied\n| rename aruba_ap as AP"
+      }
+    }
+  },
+  "visualizations": {
+    "v_cl": {
+      "type": "splunk.singlevalue",
+      "title": "APs at or above the client threshold",
+      "dataSources": {
+        "primary": "ds_cl"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_cpu": {
+      "type": "splunk.singlevalue",
+      "title": "APs at or above the CPU threshold",
+      "dataSources": {
+        "primary": "ds_cpu"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_mem": {
+      "type": "splunk.singlevalue",
+      "title": "APs at or above the memory threshold",
+      "dataSources": {
+        "primary": "ds_mem"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_over": {
+      "type": "splunk.table",
+      "title": "Access points over a threshold (click for the AP)",
+      "dataSources": {
+        "primary": "ds_over"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Clients": {
+            "rowBackgroundColors": "> table | seriesByName(\"Clients\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Clients\") | rangeValue(r0t)"
+          },
+          "CPU %": {
+            "rowBackgroundColors": "> table | seriesByName(\"CPU %\") | rangeValue(r1)",
+            "rowColors": "> table | seriesByName(\"CPU %\") | rangeValue(r1t)"
+          },
+          "Memory %": {
+            "rowBackgroundColors": "> table | seriesByName(\"Memory %\") | rangeValue(r2)",
+            "rowColors": "> table | seriesByName(\"Memory %\") | rangeValue(r2t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "transparent",
+            "to": 50
+          },
+          {
+            "value": "#D99B1E",
+            "from": 50,
+            "to": 75
+          },
+          {
+            "value": "#DC4E41",
+            "from": 75
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 50
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 50,
+            "to": 75
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 75
+          }
+        ],
+        "r1": [
+          {
+            "value": "transparent",
+            "to": 60
+          },
+          {
+            "value": "#D99B1E",
+            "from": 60,
+            "to": 80
+          },
+          {
+            "value": "#DC4E41",
+            "from": 80
+          }
+        ],
+        "r1t": [
+          {
+            "value": "#FFFFFF",
+            "to": 60
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 60,
+            "to": 80
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 80
+          }
+        ],
+        "r2": [
+          {
+            "value": "transparent",
+            "to": 70
+          },
+          {
+            "value": "#D99B1E",
+            "from": 70,
+            "to": 85
+          },
+          {
+            "value": "#DC4E41",
+            "from": 85
+          }
+        ],
+        "r2t": [
+          {
+            "value": "#FFFFFF",
+            "to": 70
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 70,
+            "to": 85
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 85
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/access_point?form.serial=$row.serialNumber.value$&form.site=*",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_hist": {
+      "type": "splunk.column",
+      "title": "Clients per access point",
+      "dataSources": {
+        "primary": "ds_hist"
+      },
+      "options": {
+        "legendDisplay": "off",
+        "x": "> primary | seriesByName('Clients per AP')",
+        "y": "> primary | frameBySeriesNames('APs')",
+        "seriesColorsByField": {
+          "APs": "#1182F3"
+        }
+      }
+    },
+    "v_mem_t": {
+      "type": "splunk.line",
+      "title": "Average memory by model (%)",
+      "dataSources": {
+        "primary": "ds_mem_t"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "nullValueDisplay": "connect",
+        "yAxisMax": 100,
+        "yAxisMin": 0
+      }
+    },
+    "v_rise": {
+      "type": "splunk.table",
+      "title": "Memory rising without a reboot (click for the AP)",
+      "dataSources": {
+        "primary": "ds_rise"
+      },
+      "options": {
+        "count": 6,
+        "columnFormat": {
+          "Growth (points)": {
+            "rowBackgroundColors": "> table | seriesByName(\"Growth (points)\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Growth (points)\") | rangeValue(r0t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "#D99B1E",
+            "to": 20
+          },
+          {
+            "value": "#DC4E41",
+            "from": 20
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 20
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 20
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/access_point?form.serial=$row.serialNumber.value$&form.site=*",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_sites": {
+      "type": "splunk.table",
+      "title": "Load and PoE draw by site (click for the site overview)",
+      "dataSources": {
+        "primary": "ds_sites"
+      },
+      "options": {
+        "count": 6,
+        "columnFormat": {
+          "Avg CPU %": {
+            "rowBackgroundColors": "> table | seriesByName(\"Avg CPU %\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Avg CPU %\") | rangeValue(r0t)"
+          },
+          "Avg memory %": {
+            "rowBackgroundColors": "> table | seriesByName(\"Avg memory %\") | rangeValue(r1)",
+            "rowColors": "> table | seriesByName(\"Avg memory %\") | rangeValue(r1t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "transparent",
+            "to": 60
+          },
+          {
+            "value": "#D99B1E",
+            "from": 60,
+            "to": 80
+          },
+          {
+            "value": "#DC4E41",
+            "from": 80
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 60
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 60,
+            "to": 80
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 80
+          }
+        ],
+        "r1": [
+          {
+            "value": "transparent",
+            "to": 70
+          },
+          {
+            "value": "#D99B1E",
+            "from": 70,
+            "to": 85
+          },
+          {
+            "value": "#DC4E41",
+            "from": 85
+          }
+        ],
+        "r1t": [
+          {
+            "value": "#FFFFFF",
+            "to": 70
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 70,
+            "to": 85
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 85
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/overview?form.site=$row.Site.value$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_disc": {
+      "type": "splunk.bar",
+      "title": "Syslog: client disconnect reasons",
+      "dataSources": {
+        "primary": "ds_disc"
+      },
+      "options": {
+        "legendDisplay": "off",
+        "x": "> primary | seriesByName('Reason')",
+        "y": "> primary | frameBySeriesNames('count')",
+        "seriesColorsByField": {
+          "count": "#2EB5A8"
+        }
+      }
+    },
+    "v_rc": {
+      "type": "splunk.table",
+      "title": "Syslog: clients denied because the AP is resource constrained (click for the raw events)",
+      "dataSources": {
+        "primary": "ds_rc"
+      },
+      "options": {
+        "count": 6,
+        "columnFormat": {
+          "Denied": {
+            "rowBackgroundColors": "> table | seriesByName(\"Denied\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Denied\") | rangeValue(r0t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "transparent",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 1
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "`aruba_syslog` | `aruba_syslog_fields` | search aruba_device=\"$row.AP.value$\" OR aruba_ap=\"$row.AP.value$\"",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_note": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "Defaults: 75 clients, 80 % CPU, 85 % memory. HPE release notes for some AP-725 releases mention crashes above about 150 clients with FTM enabled and suggest limiting to 75 to 100 clients. *Memory rising without a reboot* compares the first and last reading in the time range for access points whose uptime kept growing. It is an indicator, not proof of a leak. PoE draw is the `powerConsumption` value that the API reports per access point. The syslog panels need Aruba syslog from the gateways (process `stm`).",
+        "fontSize": "small"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time",
+      "input_site",
+      "input_c",
+      "input_p",
+      "input_m",
+      "input_g"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_cl",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 400,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_cpu",
+            "type": "block",
+            "position": {
+              "x": 400,
+              "y": 0,
+              "w": 400,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_mem",
+            "type": "block",
+            "position": {
+              "x": 800,
+              "y": 0,
+              "w": 400,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_over",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 140,
+              "w": 1200,
+              "h": 320
+            }
+          },
+          {
+            "item": "v_hist",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 460,
+              "w": 500,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_mem_t",
+            "type": "block",
+            "position": {
+              "x": 500,
+              "y": 460,
+              "w": 700,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_rise",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 760,
+              "w": 600,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_sites",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 760,
+              "w": 600,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_disc",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1040,
+              "w": 550,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_rc",
+            "type": "block",
+            "position": {
+              "x": 550,
+              "y": 1040,
+              "w": 650,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_note",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1340,
+              "w": 1200,
+              "h": 90
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Capacity and load"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

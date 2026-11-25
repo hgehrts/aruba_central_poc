@@ -1,0 +1,801 @@
+<dashboard version="2" theme="dark">
+    <label>Syslog events</label>
+    <description>Aruba syslog: severity, processes, devices, event IDs, authentication failures, client disconnects and rogue access points. Optional: needs Aruba syslog, see Configuration (source check) if the panels are empty.</description>
+    <definition><![CDATA[
+{
+  "title": "Syslog events",
+  "description": "Aruba syslog: severity, processes, devices, event IDs, authentication failures, client disconnects and rogue access points. Optional: needs Aruba syslog, see Configuration (source check) if the panels are empty.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-24h,now"
+      }
+    },
+    "input_level": {
+      "type": "input.dropdown",
+      "title": "Severity",
+      "options": {
+        "token": "level",
+        "defaultValue": "*",
+        "items": [
+          {
+            "label": "All",
+            "value": "*"
+          },
+          {
+            "label": "Error",
+            "value": "Error"
+          },
+          {
+            "label": "Warning",
+            "value": "Warning"
+          },
+          {
+            "label": "Info",
+            "value": "Info"
+          }
+        ]
+      }
+    },
+    "input_proc": {
+      "type": "input.text",
+      "title": "Process (wildcard)",
+      "options": {
+        "token": "proc",
+        "defaultValue": "*"
+      }
+    },
+    "input_dev": {
+      "type": "input.text",
+      "title": "Device (wildcard)",
+      "options": {
+        "token": "dev",
+        "defaultValue": "*"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_n": {
+      "type": "ds.search",
+      "name": "Events",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| stats count"
+      }
+    },
+    "ds_err": {
+      "type": "ds.search",
+      "name": "Errors",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| where aruba_severity=\"Error\" | stats count"
+      }
+    },
+    "ds_af": {
+      "type": "ds.search",
+      "name": "Auth failures",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| search \"User Authentication failed\" | stats count"
+      }
+    },
+    "ds_ids": {
+      "type": "ds.search",
+      "name": "IDS",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| search \"|ids|\" OR \"|ids-ap|\" | stats count"
+      }
+    },
+    "ds_time": {
+      "type": "ds.search",
+      "name": "Over time",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| timechart count by aruba_severity"
+      }
+    },
+    "ds_proc": {
+      "type": "ds.search",
+      "name": "By process",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| stats count by aruba_process | sort - count | head 12"
+      }
+    },
+    "ds_dev": {
+      "type": "ds.search",
+      "name": "Devices",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| eval k=lower(aruba_device)\n| stats count as Events count(eval(aruba_severity=\"Error\")) as Errors count(eval(aruba_severity=\"Warning\")) as Warnings latest(_time) as last by k aruba_device\n| join type=left max=1 k [search `aruba_central_index` (sourcetype=\"aruba:central:ap\" OR sourcetype=\"aruba:central:device\") earliest=-3h | stats latest(siteName) as central_site latest(model) as central_model latest(serialNumber) as serial by deviceName | eval k=lower(deviceName) | fields k central_site central_model serial]\n| eval Last=strftime(last,\"%Y-%m-%d %H:%M\"), \"Central site\"=coalesce(central_site,\"(not in Central)\")\n| table aruba_device \"Central site\" central_model Events Errors Warnings Last\n| sort - Errors - Events\n| rename aruba_device as Device, central_model as Model"
+      }
+    },
+    "ds_eid": {
+      "type": "ds.search",
+      "name": "Event IDs",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| stats count as Events latest(aruba_message) as Example values(aruba_level) as Level latest(event_description) as Description by aruba_process aruba_event_id\n| where isnotnull(aruba_event_id)\n| sort - Events | head 50\n| eval Description=coalesce(Description,\"\")\n| table aruba_event_id aruba_process Level Events Description Example\n| rename aruba_event_id as ID, aruba_process as Process"
+      }
+    },
+    "ds_auth": {
+      "type": "ds.search",
+      "name": "Auth failures",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| search \"User Authentication failed\"\n| rex \"username=(?<User>[^\\s]+)\"\n| rex \"reason=(?<Reason>[^,]+)$\"\n| stats count as Failures dc(aruba_device) as Gateways latest(_time) as last by User Reason\n| eval Last=strftime(last,\"%Y-%m-%d %H:%M\")\n| sort - Failures\n| table User Reason Failures Gateways Last"
+      }
+    },
+    "ds_disc": {
+      "type": "ds.search",
+      "name": "Disconnect reasons",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| search \"Deauth\" OR \"Disassoc\"\n| rex field=aruba_message \"Reason (?<Reason>.+)$\"\n| stats count as Disconnects dc(aruba_ap) as APs by Reason\n| sort - Disconnects"
+      }
+    },
+    "ds_rogue": {
+      "type": "ds.search",
+      "name": "Rogue and interfering",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| search \"|ids|\" OR \"|ids-ap|\"\n| rex \"BSSID (?<BSSID>(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}) and SSID (?<SSID>.*?) on CHANNEL (?<Channel>\\d+)\"\n| eval Type=if(match(_raw,\"(?i)rogue\"),\"Rogue AP\",\"Interfering AP\"), Detector=coalesce(aruba_ap,aruba_device)\n| stats count as Detections latest(_time) as last values(Detector) as \"Detected by\" by Type BSSID SSID Channel\n| eval Last=strftime(last,\"%Y-%m-%d %H:%M\")\n| sort Type - Detections\n| table Type BSSID SSID Channel Detections \"Detected by\" Last"
+      }
+    },
+    "ds_raw": {
+      "type": "ds.search",
+      "name": "Latest events",
+      "options": {
+        "query": "`aruba_syslog` | `aruba_syslog_fields`\n| search aruba_severity=\"$level$\" aruba_process=\"$proc$\" aruba_device=\"$dev$\"\n| head 200\n| eval Time=strftime(_time,\"%Y-%m-%d %H:%M:%S\")\n| table Time aruba_device aruba_severity aruba_level aruba_process aruba_event_id aruba_message\n| rename aruba_device as Device, aruba_severity as Severity, aruba_level as Level, aruba_process as Process, aruba_event_id as \"Event ID\", aruba_message as Message"
+      }
+    }
+  },
+  "visualizations": {
+    "v_n": {
+      "type": "splunk.singlevalue",
+      "title": "Syslog events",
+      "dataSources": {
+        "primary": "ds_n"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#1182F3"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "level",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_err": {
+      "type": "splunk.singlevalue",
+      "title": "Errors and critical",
+      "dataSources": {
+        "primary": "ds_err"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "level",
+                "value": "Error"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_af": {
+      "type": "splunk.singlevalue",
+      "title": "Authentication failures",
+      "dataSources": {
+        "primary": "ds_af"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_ids": {
+      "type": "splunk.singlevalue",
+      "title": "Rogue and interfering AP events",
+      "dataSources": {
+        "primary": "ds_ids"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_time": {
+      "type": "splunk.column",
+      "title": "Events over time by severity (click to filter)",
+      "dataSources": {
+        "primary": "ds_time"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked",
+        "seriesColorsByField": {
+          "Error": "#DC4E41",
+          "Warning": "#F8BE34",
+          "Info": "#1182F3"
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "level",
+                "key": "name"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_proc": {
+      "type": "splunk.bar",
+      "title": "Events by process (click to filter)",
+      "dataSources": {
+        "primary": "ds_proc"
+      },
+      "options": {
+        "legendDisplay": "off",
+        "x": "> primary | seriesByName('aruba_process')",
+        "y": "> primary | frameBySeriesNames('count')",
+        "seriesColorsByField": {
+          "count": "#7B56DB"
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "proc",
+                "key": "row.aruba_process.value"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_dev": {
+      "type": "splunk.table",
+      "title": "Devices sending syslog (click to filter)",
+      "dataSources": {
+        "primary": "ds_dev"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Errors": {
+            "rowBackgroundColors": "> table | seriesByName(\"Errors\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Errors\") | rangeValue(r0t)"
+          },
+          "Warnings": {
+            "rowBackgroundColors": "> table | seriesByName(\"Warnings\") | rangeValue(r1)",
+            "rowColors": "> table | seriesByName(\"Warnings\") | rangeValue(r1t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "transparent",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 1
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 1
+          }
+        ],
+        "r1": [
+          {
+            "value": "transparent",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ],
+        "r1t": [
+          {
+            "value": "#FFFFFF",
+            "to": 1
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "dev",
+                "key": "row.Device.value"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_eid": {
+      "type": "splunk.table",
+      "title": "Event IDs (click for the raw events)",
+      "dataSources": {
+        "primary": "ds_eid"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Example": {
+            "width": 420
+          }
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "`aruba_syslog` | `aruba_syslog_fields` | search aruba_event_id=\"$row.ID.value$\"",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_auth": {
+      "type": "splunk.table",
+      "title": "Authentication failures by user and reason (click for the raw events)",
+      "dataSources": {
+        "primary": "ds_auth"
+      },
+      "options": {
+        "count": 6,
+        "columnFormat": {
+          "Failures": {
+            "rowBackgroundColors": "> table | seriesByName(\"Failures\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Failures\") | rangeValue(r0t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "#D99B1E",
+            "to": 10
+          },
+          {
+            "value": "#DC4E41",
+            "from": 10
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 10
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 10
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "`aruba_syslog` \"User Authentication failed\" \"username=$row.User.value$\"",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_disc": {
+      "type": "splunk.table",
+      "title": "Client disconnect reasons",
+      "dataSources": {
+        "primary": "ds_disc"
+      },
+      "options": {
+        "count": 6
+      }
+    },
+    "v_rogue": {
+      "type": "splunk.table",
+      "title": "Rogue and interfering access points (click for the raw events)",
+      "dataSources": {
+        "primary": "ds_rogue"
+      },
+      "options": {
+        "count": 6,
+        "columnFormat": {
+          "Type": {
+            "rowBackgroundColors": "> table | seriesByName(\"Type\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Type\") | matchValue(m0t)"
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "Rogue AP",
+            "value": "#DC4E41"
+          },
+          {
+            "match": "Interfering AP",
+            "value": "#D99B1E"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "Rogue AP",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Interfering AP",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "`aruba_syslog` \"$row.BSSID.value$\"",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_raw": {
+      "type": "splunk.table",
+      "title": "Latest events (click for the raw events of the device)",
+      "dataSources": {
+        "primary": "ds_raw"
+      },
+      "options": {
+        "count": 10,
+        "columnFormat": {
+          "Severity": {
+            "rowBackgroundColors": "> table | seriesByName(\"Severity\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Severity\") | matchValue(m0t)"
+          },
+          "Message": {
+            "width": 650
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "Error",
+            "value": "#DC4E41"
+          },
+          {
+            "match": "Warning",
+            "value": "#D99B1E"
+          },
+          {
+            "match": "Info",
+            "value": "#1182F3"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "Error",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Warning",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Info",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "`aruba_syslog` | `aruba_syslog_fields` | search aruba_device=\"$row.Device.value$\" OR aruba_ap=\"$row.Device.value$\"",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_note": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "Syslog from Aruba gateways, controllers and access points, from the macro `aruba_syslog` (index macro `aruba_syslog_index`, set it on the Configuration page). It is typically received by Splunk Connect for Syslog and parsed by TA-aruba_networks; the fields used here are extracted by the macro `aruba_syslog_fields`, so the panels also work without that add-on on the search head. *Central site* matches the syslog device name with New Central. Clicks set the filters at the top; reset them there.",
+        "fontSize": "small"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time",
+      "input_level",
+      "input_proc",
+      "input_dev"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_n",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_err",
+            "type": "block",
+            "position": {
+              "x": 300,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_af",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_ids",
+            "type": "block",
+            "position": {
+              "x": 900,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_time",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 140,
+              "w": 750,
+              "h": 290
+            }
+          },
+          {
+            "item": "v_proc",
+            "type": "block",
+            "position": {
+              "x": 750,
+              "y": 140,
+              "w": 450,
+              "h": 290
+            }
+          },
+          {
+            "item": "v_dev",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 430,
+              "w": 550,
+              "h": 320
+            }
+          },
+          {
+            "item": "v_eid",
+            "type": "block",
+            "position": {
+              "x": 550,
+              "y": 430,
+              "w": 650,
+              "h": 320
+            }
+          },
+          {
+            "item": "v_auth",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 750,
+              "w": 650,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_disc",
+            "type": "block",
+            "position": {
+              "x": 650,
+              "y": 750,
+              "w": 550,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_rogue",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1030,
+              "w": 1200,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_raw",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1310,
+              "w": 1200,
+              "h": 400
+            }
+          },
+          {
+            "item": "v_note",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1710,
+              "w": 1200,
+              "h": 90
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Syslog events"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

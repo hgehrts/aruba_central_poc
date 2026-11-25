@@ -1,0 +1,478 @@
+<dashboard version="2" theme="dark">
+    <label>Devices</label>
+    <description>Monitored devices and the device inventory. Click a type in a chart to filter the tables.</description>
+    <definition><![CDATA[
+{
+  "title": "Devices",
+  "description": "Monitored devices and the device inventory. Click a type in a chart to filter the tables.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-24h,now"
+      }
+    },
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    },
+    "input_dtype": {
+      "type": "input.dropdown",
+      "title": "Device type",
+      "options": {
+        "token": "dtype",
+        "defaultValue": "*",
+        "items": [
+          {
+            "label": "All",
+            "value": "*"
+          },
+          {
+            "label": "ACCESS_POINT",
+            "value": "ACCESS_POINT"
+          },
+          {
+            "label": "SWITCH",
+            "value": "SWITCH"
+          },
+          {
+            "label": "GATEWAY",
+            "value": "GATEWAY"
+          }
+        ]
+      }
+    }
+  },
+  "dataSources": {
+    "ds_n": {
+      "type": "ds.search",
+      "name": "Monitored",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats dc(serialNumber) as n"
+      }
+    },
+    "ds_on": {
+      "type": "ds.search",
+      "name": "Online",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as s by serialNumber | where s=\"ONLINE\" | stats count"
+      }
+    },
+    "ds_off": {
+      "type": "ds.search",
+      "name": "Offline",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as s by serialNumber | where s!=\"ONLINE\" | stats count"
+      }
+    },
+    "ds_inv": {
+      "type": "ds.search",
+      "name": "Inventory",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device_inventory\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats dc(serialNumber) as n"
+      }
+    },
+    "ds_types": {
+      "type": "ds.search",
+      "name": "Types",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as s latest(deviceType) as deviceType by serialNumber\n| eval s=if(s=\"ONLINE\",\"Online\",\"Offline\")\n| chart count over deviceType by s\n| fields deviceType Online Offline"
+      }
+    },
+    "ds_inv_types": {
+      "type": "ds.search",
+      "name": "Inventory types",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device_inventory\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats dc(serialNumber) as devices by deviceType"
+      }
+    },
+    "ds_devices": {
+      "type": "ds.search",
+      "name": "Devices",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$dtype$\"=\"*\" OR deviceType=\"$dtype$\"\n| stats latest(deviceName) as name latest(status) as status latest(model) as model latest(siteName) as site latest(firmwareVersion) as firmware latest(ipv4) as ip by serialNumber deviceType\n| table deviceType serialNumber name status model site ip firmware\n| sort deviceType name\n| rename deviceType as Type, name as Name, status as Status, model as Model, site as Site, ip as IP, firmware as Firmware"
+      }
+    },
+    "ds_inventory": {
+      "type": "ds.search",
+      "name": "Inventory",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:device_inventory\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$dtype$\"=\"*\" OR deviceType=\"$dtype$\"\n| stats latest(deviceName) as name latest(status) as status latest(model) as model latest(siteName) as site latest(isProvisioned) as provisioned by serialNumber deviceType\n| eval status=if(isnull(status) OR status=\"\" OR status=\"null\",\"(not reported)\",status), site=if(isnull(site) OR site=\"\" OR site=\"null\",\"(no site)\",site)\n| table deviceType serialNumber name status model site provisioned\n| sort deviceType name\n| rename deviceType as Type, name as Name, status as Status, model as Model, site as Site, provisioned as Provisioned"
+      }
+    }
+  },
+  "visualizations": {
+    "v_n": {
+      "type": "splunk.singlevalue",
+      "title": "Monitored devices",
+      "dataSources": {
+        "primary": "ds_n"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_on": {
+      "type": "splunk.singlevalue",
+      "title": "Online",
+      "dataSources": {
+        "primary": "ds_on"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051"
+          }
+        ]
+      }
+    },
+    "v_off": {
+      "type": "splunk.singlevalue",
+      "title": "Offline",
+      "dataSources": {
+        "primary": "ds_off"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/offline",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_inv": {
+      "type": "splunk.singlevalue",
+      "title": "Devices in the inventory",
+      "dataSources": {
+        "primary": "ds_inv"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#1182F3"
+          }
+        ]
+      }
+    },
+    "v_types": {
+      "type": "splunk.bar",
+      "title": "Monitored devices by type (click to filter the tables)",
+      "dataSources": {
+        "primary": "ds_types"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('deviceType')",
+        "y": "> primary | frameBySeriesNames('Online', 'Offline')",
+        "stackMode": "stacked",
+        "seriesColorsByField": {
+          "Online": "#53A051",
+          "Offline": "#DC4E41"
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "dtype",
+                "key": "row.deviceType.value"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_inv_types": {
+      "type": "splunk.bar",
+      "title": "Inventory by type (click to filter the tables)",
+      "dataSources": {
+        "primary": "ds_inv_types"
+      },
+      "options": {
+        "legendDisplay": "off",
+        "x": "> primary | seriesByName('deviceType')",
+        "y": "> primary | frameBySeriesNames('devices')",
+        "seriesColorsByField": {
+          "devices": "#1182F3"
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "dtype",
+                "key": "row.deviceType.value"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_devices": {
+      "type": "splunk.table",
+      "title": "Monitored devices (click a row for its Central events and syslog)",
+      "dataSources": {
+        "primary": "ds_devices"
+      },
+      "options": {
+        "count": 10,
+        "columnFormat": {
+          "Status": {
+            "rowBackgroundColors": "> table | seriesByName(\"Status\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Status\") | matchValue(m0t)"
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "ONLINE",
+            "value": "#53A051"
+          },
+          {
+            "match": "OFFLINE",
+            "value": "#DC4E41"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "ONLINE",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "OFFLINE",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "(`aruba_central_index` serialNumber=\"$row.serialNumber.value$\") OR (`aruba_syslog` \"$row.Name.value$\")\n| table _time index sourcetype host status deviceName _raw",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_inventory": {
+      "type": "splunk.table",
+      "title": "Device inventory",
+      "dataSources": {
+        "primary": "ds_inventory"
+      },
+      "options": {
+        "count": 10,
+        "columnFormat": {
+          "Status": {
+            "rowBackgroundColors": "> table | seriesByName(\"Status\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Status\") | matchValue(m0t)"
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "ONLINE",
+            "value": "#53A051"
+          },
+          {
+            "match": "OFFLINE",
+            "value": "#DC4E41"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "ONLINE",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "OFFLINE",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time",
+      "input_site",
+      "input_dtype"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_n",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_on",
+            "type": "block",
+            "position": {
+              "x": 300,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_off",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_inv",
+            "type": "block",
+            "position": {
+              "x": 900,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_types",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 140,
+              "w": 600,
+              "h": 260
+            }
+          },
+          {
+            "item": "v_inv_types",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 140,
+              "w": 600,
+              "h": 260
+            }
+          },
+          {
+            "item": "v_devices",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 400,
+              "w": 1200,
+              "h": 400
+            }
+          },
+          {
+            "item": "v_inventory",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 800,
+              "w": 1200,
+              "h": 400
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Devices"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

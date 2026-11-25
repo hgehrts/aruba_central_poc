@@ -1,0 +1,120 @@
+<form version="1.1" script="setup_macros.js" stylesheet="setup_macros.css">
+  <label>Configuration</label>
+  <description>Find the indexes that hold the Aruba Central data and the Aruba syslog data, then set the macros aruba_central_index and aruba_syslog_index. No restart needed.</description>
+
+  <row>
+    <panel>
+      <html>
+        <div class="aruba-setup-intro">
+          <h3>1. Find the indexes</h3>
+          <p>This app shows data that the add-on <code>TA_hpe_aruba_central</code> has collected from the New Central
+             API (sourcetypes <code>aruba:central:*</code>). If it finds nothing, install and configure the add-on first.</p>
+          <p>Syslog from Aruba gateways, controllers and access points is optional. It is typically received by
+             Splunk Connect for Syslog (SC4S) as sourcetype <code>aruba:syslog</code> (default index <code>netops</code>).
+             The add-on <code>TA-aruba_networks</code> renames it to one sourcetype per process, for example
+             <code>aruba:authmgr</code> or <code>aruba:stm</code>. Both searches below look at the last 24 hours.</p>
+        </div>
+      </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <title>Candidate indexes for Aruba Central data (sourcetype=aruba:central:*)</title>
+        <search>
+          <query>| metasearch index=* sourcetype=aruba:central:* | stats count by index, sourcetype | sort - count</query>
+          <earliest>-24h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+    <panel>
+      <table>
+        <title>Candidate indexes for Aruba syslog (sourcetype=aruba:*, without aruba:central:*)</title>
+        <search>
+          <query>| metasearch index=* (sourcetype=aruba:* OR sourcetype=aruba) NOT sourcetype=aruba:central:* | stats count by index | sort - count</query>
+          <earliest>-24h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <html>
+        <div class="aruba-setup-form">
+          <h3>2. Set the index macros</h3>
+          <p>Enter the full search expression, for example <code>index=aruba</code> or
+             <code>(index=aruba OR index=network)</code>. The current values are pre-filled.</p>
+
+          <label for="aruba_central_index_def">aruba_central_index (New Central API data)</label>
+          <input type="text" id="aruba_central_index_def" class="aruba-setup-input" placeholder="index=aruba"/>
+
+          <label for="aruba_syslog_index_def">aruba_syslog_index (Aruba syslog, optional)</label>
+          <input type="text" id="aruba_syslog_index_def" class="aruba-setup-input" placeholder="index=netops"/>
+
+          <div class="aruba-setup-actions">
+            <button id="aruba_setup_save" class="btn btn-primary">Save macros</button>
+            <span id="aruba_setup_status" class="aruba-setup-status"></span>
+          </div>
+          <p class="aruba-setup-note">The macros are stored in <code>local/macros.conf</code> of this app and apply
+             to all dashboards immediately. The macro <code>aruba_syslog</code> adds the sourcetype filter to
+             <code>aruba_syslog_index</code>. If you have no Aruba syslog, keep the default: the syslog panels then
+             stay empty.</p>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <html>
+        <div class="aruba-setup-intro">
+          <h3>3. Source check</h3>
+          <p>Shows for every data source whether events arrive with the saved macros, when the last event came in and how
+             many events arrived per hour over the last 24 hours. Green: data is fresh. Amber: the source delivers, but the
+             last event is older than expected. Red: the Central source delivered nothing in 24 hours. Grey: optional or event-driven
+             source without data. The check refreshes when you save the macros.</p>
+        </div>
+      </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table id="aruba_source_table">
+        <title>Source check (last 24 hours, with the saved macros)</title>
+        <search id="aruba_source_check">
+          <query>`aruba_central_index` sourcetype="aruba:central:*"
+| stats count as Events latest(_time) as last sparkline(count,1h) as Trend by sourcetype
+| append [| makeresults | eval sourcetype=split("aruba:central:ap,aruba:central:ap_throughput,aruba:central:site_health,aruba:central:device,aruba:central:device_inventory,aruba:central:alert",",") | mvexpand sourcetype | eval Events=0 | fields sourcetype Events]
+| dedup sourcetype
+| eval Source=case(sourcetype="aruba:central:ap","Access points",sourcetype="aruba:central:ap_throughput","Access point throughput",sourcetype="aruba:central:site_health","Site health",sourcetype="aruba:central:device","Switches and gateways",sourcetype="aruba:central:device_inventory","Device inventory",sourcetype="aruba:central:alert","Alerts",sourcetype="aruba:central:swarm","Swarm clusters (optional)",true(),sourcetype)
+| eval Origin="Aruba Central"
+| eval max_age=case(sourcetype="aruba:central:ap" OR sourcetype="aruba:central:swarm",10,sourcetype="aruba:central:ap_throughput",45,sourcetype="aruba:central:site_health",30,sourcetype="aruba:central:device" OR sourcetype="aruba:central:device_inventory",90,true(),1440)
+| eval age_min=if(isnull(last),null(),round((now()-last)/60))
+| eval Status=case(sourcetype="aruba:central:alert" AND Events=0,"&#9679; None in 24 h",sourcetype="aruba:central:swarm" AND Events=0,"&#9679; Not collected",Events=0,"&#9679; No data",sourcetype="aruba:central:alert","&#9679; OK",age_min&lt;=max_age,"&#9679; OK",true(),"&#9679; Delayed")
+| append [search `aruba_syslog` | stats count as Events latest(_time) as last sparkline(count,1h) as Trend | eval Source="Aruba syslog", Origin="Syslog (optional)", age_min=round((now()-last)/60), Status=case(Events=0,"&#9679; Optional, no data",age_min&lt;=15,"&#9679; OK",true(),"&#9679; Delayed")]
+| eval Last=if(isnull(last),"-",strftime(last,"%Y-%m-%d %H:%M:%S")), "Age (min)"=age_min
+| fillnull value=0 Events
+| eval order=case(Origin="Aruba Central",0,true(),1)
+| sort order Source
+| table Status Origin Source Events Trend Last "Age (min)"</query>
+          <earliest>-24h</earliest>
+          <latest>now</latest>
+          <refresh>2m</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="count">12</option>
+        <option name="drilldown">none</option>
+        <format type="color" field="Status">
+          <colorPalette type="map">{"&#9679; OK":#53A051,"&#9679; Delayed":#D99B1E,"&#9679; No data":#DC4E41,"&#9679; None in 24 h":#708794,"&#9679; Not collected":#708794,"&#9679; Optional, no data":#708794}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+</form>

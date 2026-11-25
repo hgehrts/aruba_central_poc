@@ -1,0 +1,480 @@
+<dashboard version="2" theme="dark">
+    <label>Data health</label>
+    <description>Is the data from TA_hpe_aruba_central and the Aruba syslog arriving? Freshness, volume, input runs and add-on errors.</description>
+    <definition><![CDATA[
+{
+  "title": "Data health",
+  "description": "Is the data from TA_hpe_aruba_central and the Aruba syslog arriving? Freshness, volume, input runs and add-on errors.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-24h,now"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_fresh": {
+      "type": "ds.search",
+      "name": "Freshness",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:*\"\n| stats latest(_time) as last_event count as events by sourcetype\n| append [search `aruba_syslog` | stats latest(_time) as last_event count as events | eval sourcetype=\"Aruba syslog (macro aruba_syslog)\"]\n| eval age_min=round((now()-last_event)/60,1)\n| eval max_age=case(sourcetype=\"aruba:central:ap\" OR sourcetype=\"aruba:central:swarm\",10,sourcetype=\"aruba:central:ap_throughput\",45,sourcetype=\"aruba:central:site_health\",30,sourcetype=\"aruba:central:device\" OR sourcetype=\"aruba:central:device_inventory\",180,like(sourcetype,\"Aruba syslog%\"),60,true(),null())\n| eval Status=case(sourcetype=\"aruba:central:alert\",\"Written on change\",like(sourcetype,\"Aruba syslog%\") AND events=0,\"No syslog (optional)\",age_min<=max_age,\"OK\",true(),\"Stale: check the input\")\n| eval \"Last event\"=if(isnull(last_event),\"-\",strftime(last_event,\"%Y-%m-%d %H:%M:%S\"))\n| table sourcetype \"Last event\" age_min events Status\n| rename sourcetype as Sourcetype, age_min as \"Age (min)\", events as Events\n| sort Sourcetype"
+      }
+    },
+    "ds_stale": {
+      "type": "ds.search",
+      "name": "Stale",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:*\"\n| stats latest(_time) as last_event count as events by sourcetype\n| append [search `aruba_syslog` | stats latest(_time) as last_event count as events | eval sourcetype=\"Aruba syslog (macro aruba_syslog)\"]\n| eval age_min=round((now()-last_event)/60,1)\n| eval max_age=case(sourcetype=\"aruba:central:ap\" OR sourcetype=\"aruba:central:swarm\",10,sourcetype=\"aruba:central:ap_throughput\",45,sourcetype=\"aruba:central:site_health\",30,sourcetype=\"aruba:central:device\" OR sourcetype=\"aruba:central:device_inventory\",180,like(sourcetype,\"Aruba syslog%\"),60,true(),null())\n| eval Status=case(sourcetype=\"aruba:central:alert\",\"Written on change\",like(sourcetype,\"Aruba syslog%\") AND events=0,\"No syslog (optional)\",age_min<=max_age,\"OK\",true(),\"Stale: check the input\")\n| where Status=\"Stale: check the input\" | stats count"
+      }
+    },
+    "ds_impl": {
+      "type": "ds.search",
+      "name": "Implausible values",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval cpu=tonumber(cpuUtilization), mem=tonumber(memoryUtilization)\n| where cpu>100 OR cpu<0 OR mem>100 OR mem<0\n| stats count"
+      }
+    },
+    "ds_vol": {
+      "type": "ds.search",
+      "name": "Volume",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:*\"\n| timechart minspan=1h count by sourcetype"
+      }
+    },
+    "ds_err": {
+      "type": "ds.search",
+      "name": "Errors",
+      "options": {
+        "query": "index=_internal source=*ta_hpe_aruba_central_* (log_level=ERROR OR log_level=WARNING)\n| timechart minspan=1h count by log_level"
+      }
+    },
+    "ds_errtbl": {
+      "type": "ds.search",
+      "name": "Recent problems",
+      "options": {
+        "query": "index=_internal source=*ta_hpe_aruba_central_* (log_level=ERROR OR log_level=WARNING)\n| eval Log=replace(source,\".*/\",\"\"), Time=strftime(_time,\"%Y-%m-%d %H:%M:%S\")\n| table Time log_level Log exc_l action reason path step\n| sort - _time\n| rename log_level as Level, exc_l as Category, action as Action, reason as Reason, path as Path, step as Step"
+      }
+    },
+    "ds_runs": {
+      "type": "ds.search",
+      "name": "Runs",
+      "options": {
+        "query": "index=_internal source=*ta_hpe_aruba_central_* action=run_summary\n| stats latest(_time) as last_run count as runs avg(duration_s) as avg_s max(duration_s) as max_s sum(api_requests) as requests sum(errors) as errors by modular_input_name\n| eval \"Last run\"=strftime(last_run,\"%Y-%m-%d %H:%M:%S\"), avg_s=round(avg_s,1)\n| table modular_input_name \"Last run\" runs avg_s max_s requests errors\n| rename modular_input_name as Input, runs as Runs, avg_s as \"Avg duration (s)\", max_s as \"Max duration (s)\", requests as \"API requests\", errors as Errors"
+      }
+    },
+    "ds_slvol": {
+      "type": "ds.search",
+      "name": "Syslog volume",
+      "options": {
+        "query": "`aruba_syslog`\n| timechart minspan=1h count by sourcetype"
+      }
+    }
+  },
+  "visualizations": {
+    "v_stale": {
+      "type": "splunk.singlevalue",
+      "title": "Sourcetypes that look stale",
+      "dataSources": {
+        "primary": "ds_stale"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_impl": {
+      "type": "splunk.singlevalue",
+      "title": "Access point readings with CPU or memory outside 0 to 100 %",
+      "dataSources": {
+        "primary": "ds_impl"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" | eval cpu=tonumber(cpuUtilization), mem=tonumber(memoryUtilization) | where cpu>100 OR cpu<0 OR mem>100 OR mem<0 | table _time deviceName serialNumber siteName cpuUtilization memoryUtilization",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_fresh": {
+      "type": "splunk.table",
+      "title": "Data freshness per sourcetype",
+      "dataSources": {
+        "primary": "ds_fresh"
+      },
+      "options": {
+        "count": 10,
+        "columnFormat": {
+          "Status": {
+            "rowBackgroundColors": "> table | seriesByName(\"Status\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Status\") | matchValue(m0t)"
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "OK",
+            "value": "#53A051"
+          },
+          {
+            "match": "Stale: check the input",
+            "value": "#DC4E41"
+          },
+          {
+            "match": "Written on change",
+            "value": "transparent"
+          },
+          {
+            "match": "No syslog (optional)",
+            "value": "transparent"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "OK",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Stale: check the input",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Written on change",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "No syslog (optional)",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      }
+    },
+    "v_vol": {
+      "type": "splunk.column",
+      "title": "Aruba Central events per hour",
+      "dataSources": {
+        "primary": "ds_vol"
+      },
+      "options": {
+        "legendDisplay": "right",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked"
+      }
+    },
+    "v_slvol": {
+      "type": "splunk.column",
+      "title": "Aruba syslog events per hour",
+      "dataSources": {
+        "primary": "ds_slvol"
+      },
+      "options": {
+        "legendDisplay": "right",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked"
+      }
+    },
+    "v_err": {
+      "type": "splunk.column",
+      "title": "Add-on warnings and errors",
+      "dataSources": {
+        "primary": "ds_err"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked",
+        "seriesColorsByField": {
+          "ERROR": "#DC4E41",
+          "WARNING": "#F8BE34"
+        }
+      }
+    },
+    "v_runs": {
+      "type": "splunk.table",
+      "title": "Input runs",
+      "dataSources": {
+        "primary": "ds_runs"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Errors": {
+            "rowBackgroundColors": "> table | seriesByName(\"Errors\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Errors\") | rangeValue(r0t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "transparent",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 1
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_errtbl": {
+      "type": "splunk.table",
+      "title": "Recent warnings and errors (click for the add-on log)",
+      "dataSources": {
+        "primary": "ds_errtbl"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Level": {
+            "rowBackgroundColors": "> table | seriesByName(\"Level\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Level\") | matchValue(m0t)"
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "ERROR",
+            "value": "#DC4E41"
+          },
+          {
+            "match": "WARNING",
+            "value": "#D99B1E"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "ERROR",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "WARNING",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "index=_internal source=*ta_hpe_aruba_central_* (log_level=ERROR OR log_level=WARNING)",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_note": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "Freshness uses the default input intervals (Wireless 60 s, AP Throughput 900 s, Inventory 3600 s, Site Health 300 s) with room for a missed run. Alerts are written only when they change, so they have no freshness limit. Syslog is optional; it counts as stale when nothing arrived for an hour. The add-on log panels read `index=_internal`; users need access to that index. Use this page first when a dashboard looks empty.",
+        "fontSize": "small"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_stale",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 600,
+              "h": 130
+            }
+          },
+          {
+            "item": "v_impl",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 0,
+              "w": 600,
+              "h": 130
+            }
+          },
+          {
+            "item": "v_fresh",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 130,
+              "w": 1200,
+              "h": 330
+            }
+          },
+          {
+            "item": "v_vol",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 460,
+              "w": 600,
+              "h": 290
+            }
+          },
+          {
+            "item": "v_slvol",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 460,
+              "w": 600,
+              "h": 290
+            }
+          },
+          {
+            "item": "v_err",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 750,
+              "w": 500,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_runs",
+            "type": "block",
+            "position": {
+              "x": 500,
+              "y": 750,
+              "w": 700,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_errtbl",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1030,
+              "w": 1200,
+              "h": 320
+            }
+          },
+          {
+            "item": "v_note",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1350,
+              "w": 1200,
+              "h": 80
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Data health"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Package aruba_central_poc into dist/aruba_central_poc-<version>.tar.gz (+ .sha256).
+# Package aruba_network_insights into dist/aruba_network_insights-<version>.tar.gz (+ .sha256).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP=aruba_central_poc
+APP=aruba_network_insights
 VERSION="$(sed -n 's/^version = //p' "$APP/default/app.conf" | head -1)"
 
 rm -rf dist

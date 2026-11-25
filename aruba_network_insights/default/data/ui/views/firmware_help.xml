@@ -1,0 +1,180 @@
+<dashboard version="1.1" theme="dark" stylesheet="firmware_help.css">
+  <label>Firmware check help</label>
+  <description>What the firmware check does, how to read it and how to maintain its data.</description>
+  <row>
+    <panel>
+      <html>
+        <div class="aruba-help">
+<p>This page explains the <b>Firmware and security</b> dashboard of the app <code>aruba_network_insights</code>: what it does, how to read it, and how to keep its data current. It assumes that you know Aruba (Central, AOS-10, AOS-8 Instant) but not Splunk. Terms from Splunk are explained where they appear.</p>
+<h2>1. What it does</h2>
+<p>The firmware check compares the software version of every access point that Aruba Central reports with two reference lists:</p>
+<ol><li><b>Fixed versions (baseline).</b> For each software train (for example AOS-10.8, AOS-10.7, AOS-8.13) the first version that contains the fix of an HPE security advisory. The shipped list holds the versions of advisory <a href="https://csaf.arubanetworking.hpe.com/2026/hpe_networking_-_hpesbnw05162.txt" target="_blank" rel="noopener noreferrer">HPESBNW05162</a>. An access point below the fixed version of its own train is rated <b>Below fixed version</b>.</li><li><b>Documented issues.</b> Crash and reboot bugs that HPE lists as <i>resolved</i> in the AOS-10 release notes, per access point model and affected version range. An access point whose model and version fall into such a range is counted as <b>in a documented issue range</b>.</li></ol>
+<p>Both lists are plain tables with one row per fact and a link to the HPE source. Nothing is sent to HPE or anywhere else: the check runs inside your Splunk against the data that the Aruba Central add-on collected.</p>
+<h2>2. What it helps with</h2>
+<ul><li><b>Security:</b> which access points still run a version that is affected by an advisory, and which fixed version you need per software train.</li><li><b>Planning upgrades:</b> a list of the affected access points with model, site and current version, so that a maintenance window can be scoped.</li><li><b>Troubleshooting:</b> if access points reboot or crash, the check shows whether HPE already documents a bug for exactly that model and version, with the bug ID and a link to the release note.</li><li><b>Reporting:</b> the <b>Executive summary</b> shows the same numbers in its risk list, and every tile opens the detail.</li></ul>
+<p>It does <b>not</b> replace the HPE advisories and release notes. It is an indicator that points you to them (see section 7).</p>
+<h2>3. How to use it</h2>
+<p>Open <b>Risk &gt; Firmware and security</b> in the app menu.</p>
+<table class="aruba-help-table">
+<thead><tr><th>Element</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><b>APs at or above the fixed version</b> (gauge)</td><td>Share of rateable access points that run the fixed version of their train or later.</td></tr>
+<tr><td><b>APs below the fixed version</b></td><td>Number of access points to upgrade because of the advisory. Green at 0.</td></tr>
+<tr><td><b>APs in a documented issue range</b></td><td>Number of access points affected by at least one documented crash or reboot bug.</td></tr>
+<tr><td><b>APs checked</b></td><td>Number of access points that reported in the last 30 minutes. Offline access points are not rated.</td></tr>
+<tr><td><b>Firmware versions by model</b></td><td>Which versions run on which model.</td></tr>
+<tr><td><b>Compliance status</b></td><td>Share of access points per status (see below).</td></tr>
+<tr><td><b>Access points below the fixed version</b></td><td>The upgrade list. Click a row to open the access point.</td></tr>
+<tr><td><b>Access points in a documented issue range</b></td><td>One row per access point and bug. Click a row to open the HPE release note of the bug.</td></tr>
+<tr><td><b>Switch and gateway firmware</b></td><td>Versions in use. No baseline rows are shipped for them, see section 7.</td></tr>
+</tbody>
+</table>
+<p>The <b>Site</b> field above the tiles accepts a site name or a wildcard (<code>*</code> for all, <code>Berlin*</code> for all sites starting with Berlin).</p>
+<p>The status of an access point is one of:</p>
+<table class="aruba-help-table">
+<thead><tr><th>Status</th><th>Meaning</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td>At or above fixed version</td><td>The version is the fixed version of its train or newer.</td><td>Nothing.</td></tr>
+<tr><td>Below fixed version</td><td>The version is older than the fixed version of its train.</td><td>Plan the upgrade to the version in the column <b>Fixed in</b>.</td></tr>
+<tr><td>Not in baseline</td><td>There is no row for the software train of this access point.</td><td>Check the HPE advisory for this train and add a row (section 5).</td></tr>
+<tr><td>Unknown version</td><td>The version string could not be read.</td><td>Check the version in Central. Usually a test or custom build.</td></tr>
+</tbody>
+</table>
+<h3>How a version is rated</h3>
+<p>Take an access point that reports the version <code>10.8.0.1_95221</code>:</p>
+<ol><li>The build suffix <code>_95221</code> is removed. The version is <code>10.8.0.1</code>.</li><li>The train is the first two numbers: <code>10.8</code>.</li><li>The baseline row for the train <code>10.8</code> says <code>min_fixed = 10.8.1.2</code>.</li><li><code>10.8.0.1</code> is older than <code>10.8.1.2</code>, so the status is <b>Below fixed version</b>.</li></ol>
+<p>An access point on <code>10.7.2.5</code> is compared with the fix of the train <code>10.7</code> (<code>10.7.2.7</code>), not with <code>10.8.1.2</code>. This is how HPE publishes the fixes: one fixed version per train.</p>
+<p>For documented issues the rule is: the model name starts with <code>model_prefix</code>, the version is at least <code>fw_from</code> and below <code>fixed_in</code>. The bug is listed for the release in which it first appeared as fixed, so for an older train check the release notes of your own train (the link is in the row).</p>
+<h2>4. Where the data comes from</h2>
+<p>The check reads the access point inventory that the add-on <b>TA_hpe_aruba_central</b> collects from the Aruba New Central API (field <code>firmwareVersion</code> and <code>model</code>). It uses the latest value per access point from the last 30 minutes. If a tile shows 0 checked access points, the Wireless input of the add-on does not deliver data: see <b>Platform &gt; Data health</b>.</p>
+<p>The reference lists are four tables (in Splunk they are called <i>lookups</i>):</p>
+<table class="aruba-help-table">
+<thead><tr><th>List</th><th>Contains</th><th>Who maintains it</th><th>Survives an app upgrade</th></tr></thead>
+<tbody>
+<tr><td><code>aruba_firmware_baseline</code></td><td>Fixed versions of the HPE advisory, one row per train</td><td>Shipped with the app</td><td>No, replaced by the new app version</td></tr>
+<tr><td><code>aruba_known_issues</code></td><td>Documented crash and reboot bugs from HPE release notes</td><td>Shipped with the app</td><td>No, replaced by the new app version</td></tr>
+<tr><td><code>aruba_firmware_baseline_custom</code></td><td><b>Your</b> fixed versions. A row for a train replaces the shipped row of the same train.</td><td>You</td><td>Yes</td></tr>
+<tr><td><code>aruba_known_issues_custom</code></td><td><b>Your</b> additional issue rows</td><td>You</td><td>Yes</td></tr>
+</tbody>
+</table>
+<blockquote><b>Rule:</b> put your own rows only into the two <code>_custom</code> lists. Edits in the shipped lists are lost at the next app upgrade, because the upgrade installs the new version of those files.</blockquote>
+<h2>5. How to maintain the data</h2>
+<h3>5.1 Open a list for editing</h3>
+<p>The easiest editor is the Splunk app <b>Lookup Editor</b> (free, from Splunkbase: <a href="https://splunkbase.splunk.com/app/1724" target="_blank" rel="noopener noreferrer">splunkbase.splunk.com/app/1724</a>). Ask your Splunk administrator to install it once. Then these links open the lists in an editor that works like a spreadsheet (add row, edit cell, delete row, save):</p>
+<table class="aruba-help-table">
+<thead><tr><th>List</th><th>Editor link</th></tr></thead>
+<tbody>
+<tr><td>Fixed versions, yours</td><td><a href="../lookup_editor/lookup_edit?owner=nobody&amp;namespace=aruba_network_insights&amp;lookup=aruba_firmware_baseline_custom&amp;type=kv&amp;transform=aruba_firmware_baseline_custom">Edit aruba_firmware_baseline_custom</a></td></tr>
+<tr><td>Issues, yours</td><td><a href="../lookup_editor/lookup_edit?owner=nobody&amp;namespace=aruba_network_insights&amp;lookup=aruba_known_issues_custom&amp;type=kv&amp;transform=aruba_known_issues_custom">Edit aruba_known_issues_custom</a></td></tr>
+<tr><td>Fixed versions, shipped (view only)</td><td><a href="../lookup_editor/lookup_edit?owner=nobody&amp;namespace=aruba_network_insights&amp;lookup=aruba_firmware_baseline.csv&amp;type=csv">Open aruba_firmware_baseline</a></td></tr>
+<tr><td>Issues, shipped (view only)</td><td><a href="../lookup_editor/lookup_edit?owner=nobody&amp;namespace=aruba_network_insights&amp;lookup=aruba_known_issues.csv&amp;type=csv">Open aruba_known_issues</a></td></tr>
+</tbody>
+</table>
+<p>You need a role that may write to the app (<code>admin</code> or <code>sc_admin</code>).</p>
+<p>Without Lookup Editor you can still add a row with a search. Open <b>Search</b> in the app menu and run:</p>
+<pre>| makeresults
+| eval model_prefix="AP-635", fw_from="10.7.2.1", fixed_in="10.8.0.2", bug_id="AOS-268983",
+       issue="Random reboot with kernel panic",
+       source_url="https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html"
+| fields - _time
+| outputlookup append=true aruba_known_issues_custom</pre>
+<p>Use <code>aruba_firmware_baseline_custom</code> with the columns <code>scope</code>, <code>train</code>, <code>min_fixed</code>, <code>advisory</code>, <code>source_url</code>, <code>note</code> for a fixed version. Use the same approach to correct a mistake: list the table with <code>| inputlookup aruba_known_issues_custom</code>, remove or change the row and write it back with <code>| outputlookup</code> (without <code>append</code>).</p>
+<h3>5.2 The columns</h3>
+<p><b>Fixed versions</b> (<code>aruba_firmware_baseline</code> and <code>aruba_firmware_baseline_custom</code>)</p>
+<table class="aruba-help-table">
+<thead><tr><th>Column</th><th>Meaning</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><code>scope</code></td><td>What the row applies to. Only <code>ap</code> is evaluated today.</td><td><code>ap</code></td></tr>
+<tr><td><code>train</code></td><td>First two numbers of the software train.</td><td><code>10.7</code>, <code>8.13</code></td></tr>
+<tr><td><code>min_fixed</code></td><td>First version of the train that contains the fix.</td><td><code>10.7.2.7</code></td></tr>
+<tr><td><code>advisory</code></td><td>Advisory number, shown in the tables.</td><td><code>HPESBNW05162</code></td></tr>
+<tr><td><code>source_url</code></td><td>Link to the advisory.</td><td><code>https://csaf.arubanetworking.hpe.com/...</code></td></tr>
+<tr><td><code>note</code></td><td>Free text, for example exceptions.</td><td><code>FIPS AP-5xx: 8.13.3.2 FIPS</code></td></tr>
+</tbody>
+</table>
+<p>One row per train. If the shipped list and your list have a row for the same train, yours wins. Use this when a newer advisory raises the fixed version of a train before the next app release does.</p>
+<p><b>Documented issues</b> (<code>aruba_known_issues</code> and <code>aruba_known_issues_custom</code>)</p>
+<table class="aruba-help-table">
+<thead><tr><th>Column</th><th>Meaning</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><code>model_prefix</code></td><td>Start of the model name. <code>AP-635</code> matches one model, <code>AP-7</code> the whole AP-7xx family.</td><td><code>AP-635</code></td></tr>
+<tr><td><code>fw_from</code></td><td>First affected version, included.</td><td><code>10.7.2.1</code></td></tr>
+<tr><td><code>fixed_in</code></td><td>First version with the fix, <b>not</b> included. Leave empty if there is no fix yet.</td><td><code>10.8.0.2</code></td></tr>
+<tr><td><code>bug_id</code></td><td>HPE bug ID.</td><td><code>AOS-268983</code></td></tr>
+<tr><td><code>issue</code></td><td>Short description in your words.</td><td><code>Random reboot with kernel panic</code></td></tr>
+<tr><td><code>source_url</code></td><td>Link to the HPE page. It opens when you click the row in the dashboard.</td><td>release note URL</td></tr>
+</tbody>
+</table>
+<p>Versions are written with 2 to 4 numbers separated by dots, without letters and without the build number: <code>10.7.2.1</code>, not <code>10.7.2.1_95221</code>.</p>
+<h3>5.3 Check your entries</h3>
+<p>At the end of the help page in the app, the panel <b>Check of the lists</b> shows how many rows each list has and reports rows with a typing mistake, for example a version with letters or a link without <code>https://</code>. After saving a list, reload the dashboard <b>Firmware and security</b>: the change is effective immediately, no restart needed.</p>
+<p>The panel <b>Firmware that cannot be rated yet</b> lists versions with the status <i>Not in baseline</i> or <i>Unknown version</i>. Each entry there is a reason to add a row.</p>
+<h3>5.4 When to update</h3>
+<ul><li><b>When HPE publishes a security advisory for Aruba / HPE Networking.</b> Look up the fixed version for each train and enter it as a row in <code>aruba_firmware_baseline_custom</code>. The advisory names the fixed versions per product and train. Advisories are listed in the <a href="https://support.hpe.com/connect/s/securitybulletinlibrary" target="_blank" rel="noopener noreferrer">HPE Security Bulletin Library</a> and published in machine-readable form at <a href="https://csaf.arubanetworking.hpe.com/" target="_blank" rel="noopener noreferrer">csaf.arubanetworking.hpe.com</a> (the file <code>changes.csv</code> there lists new and updated advisories).</li><li><b>When you adopt a new AOS release.</b> Read its <i>Resolved Issues</i> page in the <a href="https://arubanetworking.hpe.com/techdocs/central/aos10rn/index.html" target="_blank" rel="noopener noreferrer">AOS-10 release notes</a>. Add a row to <code>aruba_known_issues_custom</code> for each crash or reboot bug of a model that you run. Skip bugs without a model name and bugs that only affect gateways or switches. For AOS-8 Instant see the <a href="https://arubanetworking.hpe.com/techdocs/ArubaOS/oxygen/AOS-8%20Consolidated%20Release%20Notes%20Portal/aos-8-13-x-x/resolved-issues-in-aos-8-13-3-2.html" target="_blank" rel="noopener noreferrer">AOS-8 release notes</a>.</li><li><b>After an app upgrade.</b> The shipped lists were replaced by the new version with the newest HPE data. Your own lists are unchanged. Remove rows from your lists that duplicate the new shipped rows.</li><li><b>Regularly,</b> for example once a month, open the panel <b>Firmware that cannot be rated yet</b>.</li></ul>
+<h2>6. Splunk terms used here</h2>
+<ul><li><b>Lookup:</b> a table that Splunk reads when it runs a search. Here: the four lists above. The shipped ones are CSV files, your own ones are stored in the <b>KV Store</b>, a small database inside Splunk, so that app upgrades do not touch them.</li><li><b>Search:</b> the entry <b>Search</b> in the app menu opens the search bar. Searches are written in a language called SPL. You only need it for the optional examples in section 5.1.</li><li><b>Macro:</b> a named piece of search that the dashboards reuse. The check uses the macros <code>aruba_fw_key</code>, <code>aruba_fw_baseline</code> and <code>aruba_fw_issues</code>. You do not need to change them.</li><li><b>Dashboard:</b> a page with tiles and tables. Clicking a tile or a row opens the detail.</li></ul>
+<h2>7. Limits</h2>
+<ul><li><b>The shipped issue list is a selection, not the complete release notes.</b> It covers the crash and reboot bugs with a model name from the release notes of AOS-10.8.0.2 and AOS-10.8.1.2. Other releases and other bug types are not included. Add rows from the release notes of the releases you run. The absence of a row is not a statement that an access point is free of problems.</li><li><b>One fixed version per issue.</b> The row names the release in which HPE lists the fix. Maintenance releases of older trains (for example 10.7.x) may contain the fix earlier. Open the link of the row and check the release notes of your train. If the fix is already in your version, add a row to your own list or ignore the entry.</li><li><b>Access points only.</b> The advisory also covers Mobility Gateways managed by Central. Switches and gateways are listed under <i>Switch and gateway firmware</i> without a rating. You can add rows with another <code>scope</code>, but the dashboards evaluate only <code>ap</code> today.</li><li><b>End-of-Maintenance and End-of-Support versions.</b> The HPE advisory states that software versions that reached End of Maintenance are presumed to be affected, even when they are not named in the table. The check rates such versions as <i>Not in baseline</i> and does not count them as a risk. Treat them as affected.</li><li><b>The result depends on the data.</b> An access point is rated only if it reported in the last 30 minutes. The model name must be reported in Central.</li><li><b>Exceptions in advisories.</b> The baseline holds one version per train. An exception (for example FIPS AP-5xx on AOS-8.13 need 8.13.3.2 FIPS) is stated in the column <code>note</code>.</li></ul>
+<h2>8. Sources</h2>
+<ul><li>HPE advisory HPESBNW05162 (fixed versions): <a href="https://csaf.arubanetworking.hpe.com/2026/hpe_networking_-_hpesbnw05162.txt" target="_blank" rel="noopener noreferrer">csaf.arubanetworking.hpe.com/2026/hpe_networking_-_hpesbnw05162.txt</a></li><li>All Aruba advisories in machine-readable form: <a href="https://csaf.arubanetworking.hpe.com/" target="_blank" rel="noopener noreferrer">csaf.arubanetworking.hpe.com</a></li><li>HPE Security Bulletin Library: <a href="https://support.hpe.com/connect/s/securitybulletinlibrary" target="_blank" rel="noopener noreferrer">support.hpe.com/connect/s/securitybulletinlibrary</a></li><li>Software downloads of fixed versions: <a href="https://networkingsupport.hpe.com" target="_blank" rel="noopener noreferrer">HPE Networking Support Portal</a></li><li>AOS-10 release notes: <a href="https://arubanetworking.hpe.com/techdocs/central/aos10rn/index.html" target="_blank" rel="noopener noreferrer">arubanetworking.hpe.com/techdocs/central/aos10rn</a>, for example <a href="https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-0-x/resolved-issues-in-aos-10-8-0-2.html" target="_blank" rel="noopener noreferrer">Resolved Issues in AOS-10.8.0.2</a> and <a href="https://arubanetworking.hpe.com/techdocs/central/aos10rn/aos-10-8-1-x/resolved-issues-in-aos-10-8-1-2.html" target="_blank" rel="noopener noreferrer">Resolved Issues in AOS-10.8.1.2</a></li><li>AOS-8 release notes (example, referenced by the advisory): <a href="https://arubanetworking.hpe.com/techdocs/ArubaOS/oxygen/AOS-8%20Consolidated%20Release%20Notes%20Portal/aos-8-13-x-x/resolved-issues-in-aos-8-13-3-2.html" target="_blank" rel="noopener noreferrer">Resolved Issues in AOS 8.13.3.2</a></li><li>Lookup Editor app: <a href="https://splunkbase.splunk.com/app/1724" target="_blank" rel="noopener noreferrer">splunkbase.splunk.com/app/1724</a></li><li>Add-on that collects the data: <b>TA_hpe_aruba_central</b> (HPE Aruba Central Add-on for Splunk)</li></ul>
+        </div>
+      </html>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Fixed versions in use (yours first, shipped list below)</title>
+      <table>
+        <search>
+          <query>| inputlookup aruba_firmware_baseline_custom | eval list="yours" | append [| inputlookup aruba_firmware_baseline | eval list="shipped"] | table list scope train min_fixed advisory note | sort list scope train</query>
+          <earliest>-5m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Documented issues in use (yours first, shipped list below)</title>
+      <table>
+        <search>
+          <query>| inputlookup aruba_known_issues_custom | eval list="yours" | append [| inputlookup aruba_known_issues | eval list="shipped"] | table list model_prefix fw_from fixed_in bug_id issue | sort list model_prefix bug_id</query>
+          <earliest>-5m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Check of the lists (rows and typing mistakes)</title>
+      <table>
+        <search>
+          <query>| inputlookup aruba_known_issues | eval list="Known issues (shipped)", row=bug_id." ".model_prefix, problem=mvappend(if(len(model_prefix)=0,"model_prefix is empty",null()), if(NOT match(fw_from,"^\d+\.\d+(\.\d+){0,2}$$"),"fw_from is not a version such as 10.7.2.1",null()), if(len(fixed_in)&gt;0 AND NOT match(fixed_in,"^\d+\.\d+(\.\d+){0,2}$$"),"fixed_in is not a version",null()), if(len(bug_id)=0,"bug_id is empty",null()), if(NOT match(source_url,"^https://"),"source_url is not an https link",null())) | append [| inputlookup aruba_known_issues_custom | eval list="Known issues (yours)", row=bug_id." ".model_prefix, problem=mvappend(if(len(model_prefix)=0,"model_prefix is empty",null()), if(NOT match(fw_from,"^\d+\.\d+(\.\d+){0,2}$$"),"fw_from is not a version such as 10.7.2.1",null()), if(len(fixed_in)&gt;0 AND NOT match(fixed_in,"^\d+\.\d+(\.\d+){0,2}$$"),"fixed_in is not a version",null()), if(len(bug_id)=0,"bug_id is empty",null()), if(NOT match(source_url,"^https://"),"source_url is not an https link",null()))] | append [| inputlookup aruba_firmware_baseline | eval list="Fixed versions (shipped)", row=scope." ".train, problem=mvappend(if(NOT match(train,"^\d+\.\d+$$"),"train must have two numbers such as 10.7",null()), if(NOT match(min_fixed,"^\d+\.\d+\.\d+(\.\d+)?$$"),"min_fixed is not a version",null()), if(NOT match(source_url,"^https://"),"source_url is not an https link",null()))] | append [| inputlookup aruba_firmware_baseline_custom | eval list="Fixed versions (yours)", row=scope." ".train, problem=mvappend(if(NOT match(train,"^\d+\.\d+$$"),"train must have two numbers such as 10.7",null()), if(NOT match(min_fixed,"^\d+\.\d+\.\d+(\.\d+)?$$"),"min_fixed is not a version",null()), if(NOT match(source_url,"^https://"),"source_url is not an https link",null()))] | eval n=1 | append [| makeresults | eval list=split("Known issues (shipped),Known issues (yours),Fixed versions (shipped),Fixed versions (yours)",",") | mvexpand list | eval n=0] | eval detail=if(isnotnull(problem),row.": ".mvjoin(problem,"; "),null()) | stats sum(n) as Rows count(detail) as "Rows with a problem" values(detail) as Problems by list | rename list as List | sort List</query>
+          <earliest>-5m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Firmware that cannot be rated yet (access points of the last 30 minutes)</title>
+      <table>
+        <search>
+          <query>`aruba_central_index` sourcetype="aruba:central:ap" earliest=-30m | stats latest(firmwareVersion) as firmwareVersion latest(model) as model by serialNumber | eval scope="ap" | `aruba_fw_key` | `aruba_fw_baseline` | where fw_status!="At or above fixed version" AND fw_status!="Below fixed version" | stats count as APs values(model) as Models by firmwareVersion fw_train fw_status | rename firmwareVersion as Firmware, fw_train as Train, fw_status as Status | sort - APs</query>
+          <earliest>-30m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+</dashboard>

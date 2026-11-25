@@ -1,0 +1,665 @@
+<dashboard version="2" theme="dark">
+    <label>Alerts</label>
+    <description>Alerts from New Central: open alerts, age, time to clear, noise ranking, root cause and recommended action.</description>
+    <definition><![CDATA[
+{
+  "title": "Alerts",
+  "description": "Alerts from New Central: open alerts, age, time to clear, noise ranking, root cause and recommended action.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-7d,now"
+      }
+    },
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    },
+    "input_severity": {
+      "type": "input.dropdown",
+      "title": "Severity",
+      "options": {
+        "token": "severity",
+        "defaultValue": "*",
+        "items": [
+          {
+            "label": "All",
+            "value": "*"
+          },
+          {
+            "label": "Critical",
+            "value": "Critical"
+          },
+          {
+            "label": "Major",
+            "value": "Major"
+          },
+          {
+            "label": "Minor",
+            "value": "Minor"
+          },
+          {
+            "label": "Warning",
+            "value": "Warning"
+          },
+          {
+            "label": "Info",
+            "value": "Info"
+          }
+        ]
+      }
+    },
+    "input_state": {
+      "type": "input.dropdown",
+      "title": "State",
+      "options": {
+        "token": "state",
+        "defaultValue": "*",
+        "items": [
+          {
+            "label": "All",
+            "value": "*"
+          },
+          {
+            "label": "Open",
+            "value": "Open"
+          },
+          {
+            "label": "Cleared",
+            "value": "Cleared"
+          }
+        ]
+      }
+    },
+    "input_aname": {
+      "type": "input.text",
+      "title": "Alert type (wildcard)",
+      "options": {
+        "token": "aname",
+        "defaultValue": "*"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_open": {
+      "type": "ds.search",
+      "name": "Open",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where \"$severity$\"=\"*\" OR severity=\"$severity$\"\n| where \"$state$\"=\"*\" OR state=\"$state$\"\n| search name=\"$aname$\"\n| where state=\"Open\" | stats count"
+      }
+    },
+    "ds_crit": {
+      "type": "ds.search",
+      "name": "Critical and major",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where \"$severity$\"=\"*\" OR severity=\"$severity$\"\n| where \"$state$\"=\"*\" OR state=\"$state$\"\n| search name=\"$aname$\"\n| where state=\"Open\" AND (severity=\"Critical\" OR severity=\"Major\") | stats count"
+      }
+    },
+    "ds_ttc": {
+      "type": "ds.search",
+      "name": "Median time to clear",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where \"$severity$\"=\"*\" OR severity=\"$severity$\"\n| where \"$state$\"=\"*\" OR state=\"$state$\"\n| search name=\"$aname$\"\n| where state=\"Cleared\" | stats median(hours_to_clear) as hours\n| eval minutes=round(hours*60) | fields minutes"
+      }
+    },
+    "ds_oldest": {
+      "type": "ds.search",
+      "name": "Oldest open",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where \"$severity$\"=\"*\" OR severity=\"$severity$\"\n| where \"$state$\"=\"*\" OR state=\"$state$\"\n| search name=\"$aname$\"\n| where state=\"Open\" | stats max(age_hours) as hours"
+      }
+    },
+    "ds_time": {
+      "type": "ds.search",
+      "name": "Alerts over time",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where \"$severity$\"=\"*\" OR severity=\"$severity$\"\n| where \"$state$\"=\"*\" OR state=\"$state$\"\n| search name=\"$aname$\"\n| eval _time=created\n| timechart minspan=1h count by severity"
+      }
+    },
+    "ds_noise": {
+      "type": "ds.search",
+      "name": "Alert types",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where \"$severity$\"=\"*\" OR severity=\"$severity$\"\n| where \"$state$\"=\"*\" OR state=\"$state$\"\n| search name=\"$aname$\"\n| stats count as Alerts count(eval(state=\"Open\")) as Open median(hours_to_clear) as \"Median hours to clear\" values(severity) as Severity by name\n| sort - Alerts\n| rename name as Alert"
+      }
+    },
+    "ds_list": {
+      "type": "ds.search",
+      "name": "Alerts",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(status) as status latest(severity) as severity latest(priority) as priority latest(category) as category latest(name) as name latest(summary) as summary latest(siteName) as site latest(createdAt) as createdAt latest(updatedAt) as updatedAt by id\n| eval created=`aruba_iso_epoch(createdAt)`, updated=`aruba_iso_epoch(updatedAt)`\n| eval state=if(status=\"Cleared\",\"Cleared\",\"Open\")\n| eval hours_to_clear=if(state=\"Cleared\",round((updated-created)/3600,2),null())\n| eval age_hours=if(state=\"Open\",round((now()-created)/3600,1),null())\n| where \"$severity$\"=\"*\" OR severity=\"$severity$\"\n| where \"$state$\"=\"*\" OR state=\"$state$\"\n| search name=\"$aname$\"\n| eval Created=strftime(created,\"%Y-%m-%d %H:%M\"), Age=if(state=\"Open\",tostring(round(age_hours*3600),\"duration\"),\"-\")\n| sort 0 - state created\n| table Created severity priority state category name site summary Age id\n| rename id as AlertID, severity as Severity, priority as Priority, state as State, category as Category, name as Alert, site as Site, summary as Summary"
+      }
+    },
+    "ds_detail": {
+      "type": "ds.search",
+      "name": "Selected alert",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\" id=\"$alert_id$\"\n| stats latest(summary) as summary values(rootCause{}) as rc values(action{}.solution{}) as sol latest(name) as name by id\n| eval rc=replace(mvjoin(rc,\" \"),\"\\\\{\\\"text\\\":\\\"|\\\"\\\\}$\",\"\"), sol=mvjoin(sol,\" \")\n| eval Alert=name, Summary=summary, \"Root cause\"=rc, \"Recommended action\"=sol\n| fields Alert Summary \"Root cause\" \"Recommended action\"\n| transpose 0 | rename column as Item, \"row 1\" as Text"
+      }
+    }
+  },
+  "visualizations": {
+    "v_open": {
+      "type": "splunk.singlevalue",
+      "title": "Open alerts",
+      "dataSources": {
+        "primary": "ds_open"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#F1813F"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "state",
+                "value": "Open"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_crit": {
+      "type": "splunk.singlevalue",
+      "title": "Open critical and major",
+      "dataSources": {
+        "primary": "ds_crit"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "state",
+                "value": "Open"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_ttc": {
+      "type": "splunk.singlevalue",
+      "title": "Median time to clear",
+      "dataSources": {
+        "primary": "ds_ttc"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "unit": "min",
+        "unitPosition": "after",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#1182F3"
+          }
+        ]
+      }
+    },
+    "v_oldest": {
+      "type": "splunk.singlevalue",
+      "title": "Oldest open alert",
+      "dataSources": {
+        "primary": "ds_oldest"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "unit": "h",
+        "unitPosition": "after",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 24
+          },
+          {
+            "value": "#F8BE34",
+            "from": 24,
+            "to": 168
+          },
+          {
+            "value": "#DC4E41",
+            "from": 168
+          }
+        ]
+      }
+    },
+    "v_time": {
+      "type": "splunk.column",
+      "title": "Alerts created over time (click a bar to filter by severity)",
+      "dataSources": {
+        "primary": "ds_time"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked",
+        "seriesColorsByField": {
+          "Critical": "#DC4E41",
+          "Major": "#F1813F",
+          "Minor": "#F8BE34",
+          "Warning": "#F8BE34",
+          "Info": "#1182F3"
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "severity",
+                "key": "name"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_noise": {
+      "type": "splunk.table",
+      "title": "Alert types, noisiest first (click to filter)",
+      "dataSources": {
+        "primary": "ds_noise"
+      },
+      "options": {
+        "count": 6,
+        "columnFormat": {
+          "Open": {
+            "rowBackgroundColors": "> table | seriesByName(\"Open\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"Open\") | rangeValue(r0t)"
+          }
+        }
+      },
+      "context": {
+        "r0": [
+          {
+            "value": "transparent",
+            "to": 1
+          },
+          {
+            "value": "#D99B1E",
+            "from": 1
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 1
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "aname",
+                "key": "row.Alert.value"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_list": {
+      "type": "splunk.table",
+      "title": "Alerts (click a row for root cause and action)",
+      "dataSources": {
+        "primary": "ds_list"
+      },
+      "options": {
+        "count": 6,
+        "columnFormat": {
+          "Severity": {
+            "rowBackgroundColors": "> table | seriesByName(\"Severity\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Severity\") | matchValue(m0t)",
+            "width": 80
+          },
+          "State": {
+            "rowBackgroundColors": "> table | seriesByName(\"State\") | matchValue(m1)",
+            "rowColors": "> table | seriesByName(\"State\") | matchValue(m1t)",
+            "width": 70
+          },
+          "Created": {
+            "width": 120
+          },
+          "Priority": {
+            "width": 80
+          },
+          "Category": {
+            "width": 80
+          },
+          "Summary": {
+            "width": 380
+          },
+          "Age": {
+            "width": 80
+          },
+          "AlertID": {
+            "width": 150
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "Critical",
+            "value": "#DC4E41"
+          },
+          {
+            "match": "Major",
+            "value": "#F1813F"
+          },
+          {
+            "match": "Minor",
+            "value": "#D99B1E"
+          },
+          {
+            "match": "Warning",
+            "value": "#D99B1E"
+          },
+          {
+            "match": "Info",
+            "value": "#1182F3"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "Critical",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Major",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Minor",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Warning",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Info",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ],
+        "m1": [
+          {
+            "match": "Open",
+            "value": "#F1813F"
+          },
+          {
+            "match": "Cleared",
+            "value": "#53A051"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m1t": [
+          {
+            "match": "Open",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Cleared",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "alert_id",
+                "key": "row.AlertID.value"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_detail": {
+      "type": "splunk.table",
+      "title": "Selected alert: root cause and recommended action (click for the raw events)",
+      "dataSources": {
+        "primary": "ds_detail"
+      },
+      "options": {
+        "count": 5,
+        "columnFormat": {
+          "Item": {
+            "width": 160
+          }
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "`aruba_central_index` sourcetype=\"aruba:central:alert\" id=\"$alert_id$\"",
+            "earliest": "-30d",
+            "latest": "now",
+            "newTab": true
+          }
+        }
+      ]
+    },
+    "v_note": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "Alerts are written when they appear or change. An open alert that did not change inside the time range is not listed, so use a longer range to see old open alerts. Open means any status except *Cleared*. Root cause and recommended action are the texts that New Central sends with the alert. Clicks on the chart and on the alert types set the filters at the top; reset them there.",
+        "fontSize": "small"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    },
+    "tokens": {
+      "default": {
+        "alert_id": {
+          "value": "none"
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time",
+      "input_site",
+      "input_severity",
+      "input_state",
+      "input_aname"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_open",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_crit",
+            "type": "block",
+            "position": {
+              "x": 300,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_ttc",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_oldest",
+            "type": "block",
+            "position": {
+              "x": 900,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_time",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 140,
+              "w": 650,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_noise",
+            "type": "block",
+            "position": {
+              "x": 650,
+              "y": 140,
+              "w": 550,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_list",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 440,
+              "w": 1200,
+              "h": 360
+            }
+          },
+          {
+            "item": "v_detail",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 800,
+              "w": 1200,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_note",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 1080,
+              "w": 1200,
+              "h": 80
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Alerts"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

@@ -1,0 +1,337 @@
+<dashboard version="2" theme="dark">
+    <label>Network map</label>
+    <description>Sites and devices from Aruba Central as a graph: green reachable, red unreachable, with a drilldown into the dashboards.</description>
+    <definition><![CDATA[
+{
+  "title": "Network map",
+  "description": "Sites and devices from Aruba Central as a graph: green reachable, red unreachable, with a drilldown into the dashboards.",
+  "inputs": {
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    },
+    "input_show": {
+      "type": "input.dropdown",
+      "title": "Show",
+      "options": {
+        "token": "show",
+        "defaultValue": "all",
+        "items": [
+          {
+            "label": "All sites",
+            "value": "all"
+          },
+          {
+            "label": "Only sites with unreachable devices",
+            "value": "problems"
+          }
+        ]
+      }
+    },
+    "input_lvl": {
+      "type": "input.dropdown",
+      "title": "Detail",
+      "options": {
+        "token": "lvl",
+        "defaultValue": "grp",
+        "items": [
+          {
+            "label": "Sites and device types",
+            "value": "grp"
+          },
+          {
+            "label": "Sites, device types and devices",
+            "value": "dev"
+          }
+        ]
+      }
+    },
+    "input_dir": {
+      "type": "input.dropdown",
+      "title": "Direction",
+      "options": {
+        "token": "dir",
+        "defaultValue": "topBottom",
+        "items": [
+          {
+            "label": "Top to bottom",
+            "value": "topBottom"
+          },
+          {
+            "label": "Left to right",
+            "value": "leftRight"
+          }
+        ]
+      }
+    }
+  },
+  "dataSources": {
+    "ds_graph": {
+      "type": "ds.search",
+      "name": "Network map",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip latest(firmwareVersion) as firmware by serialNumber\n| eval status=coalesce(status,\"UNKNOWN\"), ok=if(status=\"ONLINE\",1,0), name=coalesce(name,serialNumber)\n| eval type=coalesce(type,\"OTHER\"), site=coalesce(site,\"(no site)\")\n| eval typeLabel=case(type=\"ACCESS_POINT\",\"Access points\",type=\"SWITCH\",\"Switches\",type=\"GATEWAY\",\"Gateways\",true(),type)\n| eval icon=case(type=\"ACCESS_POINT\",\"wifiSignal\",type=\"SWITCH\",\"networkDevice\",type=\"GATEWAY\",\"deviceEdgeHub\",true(),\"cube\")\n| eventstats count as g_total sum(ok) as g_on by site type\n| eventstats count as s_total sum(ok) as s_on by site\n| eventstats count as c_total sum(ok) as c_on\n| where \"$show$\"=\"all\" OR s_on<s_total\n| eval role=mvappend(\"dev\",\"grp\",\"site\",\"root\") | mvexpand role\n| where role!=\"dev\" OR \"$lvl$\"=\"dev\"\n| eval id=case(role=\"root\",\"central\",role=\"site\",\"site:\".site,role=\"grp\",\"grp:\".site.\"|\".type,true(),\"dev:\".serialNumber)\n| eval parent=case(role=\"root\",null(),role=\"site\",\"central\",role=\"grp\",\"site:\".site,true(),\"grp:\".site.\"|\".type)\n| dedup id\n| eval total=case(role=\"root\",c_total,role=\"site\",s_total,role=\"grp\",g_total,true(),1)\n| eval online=case(role=\"root\",c_on,role=\"site\",s_on,role=\"grp\",g_on,true(),ok)\n| eval label=case(role=\"root\",\"Aruba Central\",role=\"site\",site,role=\"grp\",typeLabel,true(),name)\n| eval nodeTexts=if(role=\"dev\",label,label.\" (\".online.\"/\".total.\")\")\n| eval nodeIcons=case(role=\"root\",\"cloud\",role=\"site\",\"buildings\",true(),icon)\n| eval nodeColors=case(online=total,\"#53A051\",online=0,\"#DC4E41\",true(),\"#D99B1E\")\n| eval page=case(role=\"root\",\"overview\",role=\"site\",\"overview\",role=\"grp\" AND type=\"ACCESS_POINT\",\"access_points\",role=\"grp\",\"devices\",type=\"ACCESS_POINT\",\"access_point\",true(),\"devices\")\n| eval q_site=case(role=\"root\",\"*\",role=\"dev\" AND type=\"ACCESS_POINT\",\"*\",true(),site)\n| eval q_dtype=if(role=\"grp\" OR (role=\"dev\" AND type!=\"ACCESS_POINT\"),type,\"*\")\n| eval q_serial=if(role=\"dev\" AND type=\"ACCESS_POINT\",serialNumber,\"*\")\n| eval Status=if(role=\"dev\",status,online.\" of \".total.\" online\")\n| eval Type=case(role=\"root\",\"Aruba Central\",role=\"site\",\"Site\",true(),typeLabel), Model=if(role=\"dev\",model,\"-\"), IP=if(role=\"dev\",ip,\"-\"), Firmware=if(role=\"dev\",firmware,\"-\"), Site=if(role=\"root\",\"-\",site)\n| fillnull value=\"-\" Model IP Firmware\n| table id parent nodeTexts nodeIcons nodeColors page q_site q_dtype q_serial Status Type Model IP Firmware Site\n| eval key=mvappend(id,parent) | mvexpand key\n| eventstats first(eval(if(id=key,'nodeTexts',null()))) as k_nodeTexts first(eval(if(id=key,'nodeIcons',null()))) as k_nodeIcons first(eval(if(id=key,'nodeColors',null()))) as k_nodeColors first(eval(if(id=key,'page',null()))) as k_page first(eval(if(id=key,'q_site',null()))) as k_q_site first(eval(if(id=key,'q_dtype',null()))) as k_q_dtype first(eval(if(id=key,'q_serial',null()))) as k_q_serial first(eval(if(id=key,'Status',null()))) as k_Status first(eval(if(id=key,'Type',null()))) as k_Type first(eval(if(id=key,'Model',null()))) as k_Model first(eval(if(id=key,'IP',null()))) as k_IP first(eval(if(id=key,'Firmware',null()))) as k_Firmware first(eval(if(id=key,'Site',null()))) as k_Site by key\n| eval source=key, target=if(id=key,\"\",id)\n| fields - nodeTexts nodeIcons nodeColors page q_site q_dtype q_serial Status Type Model IP Firmware Site id parent key\n| rename k_nodeTexts as nodeTexts, k_nodeIcons as nodeIcons, k_nodeColors as nodeColors, k_page as page, k_q_site as q_site, k_q_dtype as q_dtype, k_q_serial as q_serial, k_Status as Status, k_Type as Type, k_Model as Model, k_IP as IP, k_Firmware as Firmware, k_Site as Site\n| table source target nodeTexts nodeIcons nodeColors page q_site q_dtype q_serial Status Type Model IP Firmware Site"
+      }
+    },
+    "ds_n": {
+      "type": "ds.search",
+      "name": "Devices",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip latest(firmwareVersion) as firmware by serialNumber\n| eval status=coalesce(status,\"UNKNOWN\"), ok=if(status=\"ONLINE\",1,0), name=coalesce(name,serialNumber)\n| eval type=coalesce(type,\"OTHER\"), site=coalesce(site,\"(no site)\")\n| stats count as n count(eval(ok=1)) as on count(eval(ok=0)) as off dc(site) as sites\n| fields n"
+      }
+    },
+    "ds_on": {
+      "type": "ds.search",
+      "name": "Reachable",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip latest(firmwareVersion) as firmware by serialNumber\n| eval status=coalesce(status,\"UNKNOWN\"), ok=if(status=\"ONLINE\",1,0), name=coalesce(name,serialNumber)\n| eval type=coalesce(type,\"OTHER\"), site=coalesce(site,\"(no site)\")\n| stats count as n count(eval(ok=1)) as on count(eval(ok=0)) as off dc(site) as sites\n| fields on"
+      }
+    },
+    "ds_off": {
+      "type": "ds.search",
+      "name": "Unreachable",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip latest(firmwareVersion) as firmware by serialNumber\n| eval status=coalesce(status,\"UNKNOWN\"), ok=if(status=\"ONLINE\",1,0), name=coalesce(name,serialNumber)\n| eval type=coalesce(type,\"OTHER\"), site=coalesce(site,\"(no site)\")\n| stats count as n count(eval(ok=1)) as on count(eval(ok=0)) as off dc(site) as sites\n| fields off"
+      }
+    },
+    "ds_sites": {
+      "type": "ds.search",
+      "name": "Sites",
+      "options": {
+        "query": "`aruba_central_index` ((sourcetype=\"aruba:central:ap\") OR (sourcetype=\"aruba:central:device\" deviceType!=\"ACCESS_POINT\")) earliest=-2h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| eval type=if(sourcetype=\"aruba:central:ap\",\"ACCESS_POINT\",deviceType)\n| stats latest(status) as status latest(deviceName) as name latest(model) as model latest(siteName) as site latest(type) as type latest(ipv4) as ip latest(firmwareVersion) as firmware by serialNumber\n| eval status=coalesce(status,\"UNKNOWN\"), ok=if(status=\"ONLINE\",1,0), name=coalesce(name,serialNumber)\n| eval type=coalesce(type,\"OTHER\"), site=coalesce(site,\"(no site)\")\n| stats count as n count(eval(ok=1)) as on count(eval(ok=0)) as off dc(site) as sites\n| fields sites"
+      }
+    }
+  },
+  "visualizations": {
+    "v_n": {
+      "type": "splunk.singlevalue",
+      "title": "Devices",
+      "dataSources": {
+        "primary": "ds_n"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_on": {
+      "type": "splunk.singlevalue",
+      "title": "Reachable",
+      "dataSources": {
+        "primary": "ds_on"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#708794",
+            "to": 1
+          },
+          {
+            "value": "#53A051",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_off": {
+      "type": "splunk.singlevalue",
+      "title": "Unreachable",
+      "dataSources": {
+        "primary": "ds_off"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      }
+    },
+    "v_sites": {
+      "type": "splunk.singlevalue",
+      "title": "Sites",
+      "dataSources": {
+        "primary": "ds_sites"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_graph": {
+      "type": "splunk.networkGraph",
+      "title": "Sites and devices (click a node to open the matching dashboard)",
+      "dataSources": {
+        "primary": "ds_graph"
+      },
+      "options": {
+        "layout": "hierarchical",
+        "hierarchyDirection": "$dir$",
+        "nodeTexts": "> primary | seriesByName('nodeTexts')",
+        "nodeIcons": "> primary | seriesByName('nodeIcons')",
+        "nodeColors": "> primary | seriesByName('nodeColors')",
+        "nodeIconColors": "#FFFFFF",
+        "nodeSize": 44,
+        "linkStyle": "solid",
+        "showDirection": false,
+        "tooltipHeaderField": "nodeTexts",
+        "tooltipNodeFields": [
+          "Status",
+          "Type",
+          "Model",
+          "IP",
+          "Firmware",
+          "Site"
+        ],
+        "showZoomControls": true,
+        "resultLimit": 2000
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/$row.page.value$?form.site=$row.q_site.value$&form.dtype=$row.q_dtype.value$&form.serial=$row.q_serial.value$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_note": {
+      "type": "splunk.markdown",
+      "options": {
+        "markdown": "Green means all devices below are reachable, amber means some are not and red means none are. Icons show the device type: Wi-Fi symbol for access points, switch symbol for switches, router symbol for gateways. The lines show membership (Central, site, device type, device) and not physical cabling, because the Aruba Central data does not contain uplink or LLDP neighbour information. Use the site filter or the Detail input to keep large networks readable, and zoom with the buttons or the mouse wheel. Reachable means the status reported by Central is ONLINE. Switches and gateways are polled hourly, access points every minute.",
+        "fontSize": "small"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "-24h",
+            "latest": "now"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_site",
+      "input_show",
+      "input_lvl",
+      "input_dir"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_n",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 300,
+              "h": 120
+            }
+          },
+          {
+            "item": "v_on",
+            "type": "block",
+            "position": {
+              "x": 300,
+              "y": 0,
+              "w": 300,
+              "h": 120
+            }
+          },
+          {
+            "item": "v_off",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 0,
+              "w": 300,
+              "h": 120
+            }
+          },
+          {
+            "item": "v_sites",
+            "type": "block",
+            "position": {
+              "x": 900,
+              "y": 0,
+              "w": 300,
+              "h": 120
+            }
+          },
+          {
+            "item": "v_graph",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 120,
+              "w": 1200,
+              "h": 700
+            }
+          },
+          {
+            "item": "v_note",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 820,
+              "w": 1200,
+              "h": 70
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Network map"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

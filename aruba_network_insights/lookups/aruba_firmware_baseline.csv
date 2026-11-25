@@ -1,0 +1,6 @@
+scope,train,min_fixed,advisory,source_url,note
+ap,10.8,10.8.1.2,HPESBNW05162,https://csaf.arubanetworking.hpe.com/2026/hpe_networking_-_hpesbnw05162.txt,AOS-10 access points: fixed in this release and later
+ap,10.7,10.7.2.7,HPESBNW05162,https://csaf.arubanetworking.hpe.com/2026/hpe_networking_-_hpesbnw05162.txt,AOS-10 access points: fixed in this release and later
+ap,10.4,10.4.1.14,HPESBNW05162,https://csaf.arubanetworking.hpe.com/2026/hpe_networking_-_hpesbnw05162.txt,AOS-10 access points: fixed in this release and later
+ap,8.13,8.13.3.1,HPESBNW05162,https://csaf.arubanetworking.hpe.com/2026/hpe_networking_-_hpesbnw05162.txt,AOS-8 Instant access points: fixed in this release and later. FIPS AP-5xx: 8.13.3.2 FIPS and later (advisory revision 2)
+ap,8.10,8.10.0.24,HPESBNW05162,https://csaf.arubanetworking.hpe.com/2026/hpe_networking_-_hpesbnw05162.txt,AOS-8 Instant access points: fixed in this release and later

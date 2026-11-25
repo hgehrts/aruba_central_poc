@@ -1,0 +1,700 @@
+<dashboard version="2" theme="dark">
+    <label>Access point</label>
+    <description>One access point: state, CPU, memory, clients, throughput, firmware check, reboots and syslog.</description>
+    <definition><![CDATA[
+{
+  "title": "Access point",
+  "description": "One access point: state, CPU, memory, clients, throughput, firmware check, reboots and syslog.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-24h,now"
+      }
+    },
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    },
+    "input_serial": {
+      "type": "input.dropdown",
+      "title": "Access point",
+      "dataSources": {
+        "primary": "ds_list"
+      },
+      "options": {
+        "token": "serial",
+        "defaultValue": "*",
+        "items": ">frame(label, value) | prepend(formattedStatics) | objects()"
+      },
+      "context": {
+        "formattedConfig": {
+          "number": {
+            "prefix": ""
+          }
+        },
+        "formattedStatics": ">statics | formatByType(formattedConfig)",
+        "statics": [
+          [
+            "All access points"
+          ],
+          [
+            "*"
+          ]
+        ],
+        "label": ">primary | seriesByName(\"label\") | renameSeries(\"label\") | formatByType(formattedConfig)",
+        "value": ">primary | seriesByName(\"value\") | renameSeries(\"value\") | formatByType(formattedConfig)"
+      }
+    }
+  },
+  "dataSources": {
+    "ds_list": {
+      "type": "ds.search",
+      "name": "AP list",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-3h\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as n by serialNumber\n| eval label=n.\" (\".serialNumber.\")\", value=serialNumber\n| sort label | table label value"
+      }
+    },
+    "ds_status": {
+      "type": "ds.search",
+      "name": "Status",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$serial$\"=\"*\" OR serialNumber=\"$serial$\"\n| stats latest(status) as status by serialNumber\n| stats count as n values(status) as status\n| eval status=if(n>1,\"Select an AP\",status) | fields status"
+      }
+    },
+    "ds_cl": {
+      "type": "ds.search",
+      "name": "Clients",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$serial$\"=\"*\" OR serialNumber=\"$serial$\"\n| bin _time span=5m\n| stats latest(clientCount) as c by _time serialNumber\n| timechart span=5m sum(c) as clients\n| where isnotnull(clients)"
+      }
+    },
+    "ds_cpu": {
+      "type": "ds.search",
+      "name": "CPU",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$serial$\"=\"*\" OR serialNumber=\"$serial$\"\n| timechart span=5m max(cpuUtilization) as cpu"
+      }
+    },
+    "ds_mem": {
+      "type": "ds.search",
+      "name": "Memory",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$serial$\"=\"*\" OR serialNumber=\"$serial$\"\n| timechart span=5m max(memoryUtilization) as mem"
+      }
+    },
+    "ds_up": {
+      "type": "ds.search",
+      "name": "Uptime",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$serial$\"=\"*\" OR serialNumber=\"$serial$\"\n| stats latest(uptimeInMillis) as up by serialNumber\n| stats count as n max(up) as up\n| eval days=if(n>1,\"-\",round(up/86400000,1)) | fields days"
+      }
+    },
+    "ds_fwk": {
+      "type": "ds.search",
+      "name": "Firmware",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$serial$\"=\"*\" OR serialNumber=\"$serial$\"\n| stats latest(firmwareVersion) as fw by serialNumber\n| stats count as n values(fw) as fw\n| eval fw=if(n>1,mvcount(fw).\" versions\",fw) | fields fw"
+      }
+    },
+    "ds_state": {
+      "type": "ds.search",
+      "name": "Details",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$serial$\"=\"*\" OR serialNumber=\"$serial$\"\n| stats latest(deviceName) as AP latest(model) as Model latest(siteName) as Site latest(ipv4) as IP latest(macAddress) as MAC latest(firmwareVersion) as Firmware latest(lastRebootReason) as \"Last reboot reason\" latest(clusterName) as Swarm by serialNumber\n| rename serialNumber as Serial"
+      }
+    },
+    "ds_util": {
+      "type": "ds.search",
+      "name": "CPU and memory",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$serial$\"=\"*\" OR serialNumber=\"$serial$\"\n| timechart span=5m max(cpuUtilization) as \"CPU %\" max(memoryUtilization) as \"Memory %\""
+      }
+    },
+    "ds_tp": {
+      "type": "ds.search",
+      "name": "Throughput",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap_throughput\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$serial$\"=\"*\" OR serialNumber=\"$serial$\"\n| timechart span=5m avg(tx) as tx avg(rx) as rx by interfaceType"
+      }
+    },
+    "ds_fwchk": {
+      "type": "ds.search",
+      "name": "Firmware check",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-30m\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(firmwareVersion) as firmwareVersion latest(model) as model latest(deviceName) as deviceName latest(siteName) as siteName latest(status) as status by serialNumber\n| eval scope=\"ap\" | `aruba_fw_key` | `aruba_fw_baseline`\n| where \"$serial$\"=\"*\" OR serialNumber=\"$serial$\"\n| table deviceName model firmwareVersion fw_status min_fixed advisory\n| rename deviceName as AP, model as Model, firmwareVersion as Firmware, fw_status as Status, min_fixed as \"Fixed in\", advisory as Advisory"
+      }
+    },
+    "ds_reb": {
+      "type": "ds.search",
+      "name": "Reboots",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\" status=ONLINE uptimeInMillis>0\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| sort 0 serialNumber _time\n| streamstats current=f last(uptimeInMillis) as prev_up last(firmwareVersion) as prev_fw last(clientCount) as prev_clients by serialNumber\n| eval reboot=if(isnotnull(prev_up) AND uptimeInMillis<prev_up-60000,1,0)\n| eval reboot_type=case(reboot=0,null(),prev_fw=firmwareVersion,\"Same firmware\",true(),\"After firmware change\")\n| eval reboot_time=_time-uptimeInMillis/1000\n| where reboot=1 AND (\"$serial$\"=\"*\" OR serialNumber=\"$serial$\")\n| eval Rebooted=strftime(reboot_time,\"%Y-%m-%d %H:%M\")\n| table Rebooted deviceName reboot_type firmwareVersion prev_clients\n| sort - Rebooted\n| rename deviceName as AP, reboot_type as Type, firmwareVersion as Firmware, prev_clients as \"Clients before\""
+      }
+    },
+    "ds_sl": {
+      "type": "ds.search",
+      "name": "Syslog",
+      "options": {
+        "query": "`aruba_syslog` [search `aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-3h serialNumber=\"$serial$\" | stats latest(deviceName) as n latest(ipv4) as ip by serialNumber | eval query=mvappend(n,ip) | fields query]\n| `aruba_syslog_fields`\n| sort - _time\n| eval Time=strftime(_time,\"%Y-%m-%d %H:%M:%S\")\n| table Time aruba_device aruba_level aruba_process aruba_message\n| rename aruba_device as \"Sent by\", aruba_level as Level, aruba_process as Process, aruba_message as Message"
+      }
+    }
+  },
+  "visualizations": {
+    "v_status": {
+      "type": "splunk.singlevalue",
+      "title": "Status",
+      "dataSources": {
+        "primary": "ds_status"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "majorColor": "> majorValue | matchValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "match": "ONLINE",
+            "value": "#53A051"
+          },
+          {
+            "match": "OFFLINE",
+            "value": "#DC4E41"
+          },
+          {
+            "value": "#708794"
+          }
+        ]
+      }
+    },
+    "v_cl": {
+      "type": "splunk.singlevalue",
+      "title": "Clients",
+      "dataSources": {
+        "primary": "ds_cl"
+      },
+      "options": {
+        "sparklineDisplay": "below",
+        "trendDisplay": "absolute",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#1182F3"
+          }
+        ]
+      }
+    },
+    "v_cpu": {
+      "type": "splunk.singlevalue",
+      "title": "CPU",
+      "dataSources": {
+        "primary": "ds_cpu"
+      },
+      "options": {
+        "sparklineDisplay": "below",
+        "trendDisplay": "off",
+        "unit": "%",
+        "unitPosition": "after",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 60
+          },
+          {
+            "value": "#F8BE34",
+            "from": 60,
+            "to": 80
+          },
+          {
+            "value": "#DC4E41",
+            "from": 80
+          }
+        ]
+      }
+    },
+    "v_mem": {
+      "type": "splunk.singlevalue",
+      "title": "Memory",
+      "dataSources": {
+        "primary": "ds_mem"
+      },
+      "options": {
+        "sparklineDisplay": "below",
+        "trendDisplay": "off",
+        "unit": "%",
+        "unitPosition": "after",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 70
+          },
+          {
+            "value": "#F8BE34",
+            "from": 70,
+            "to": 85
+          },
+          {
+            "value": "#DC4E41",
+            "from": 85
+          }
+        ]
+      }
+    },
+    "v_up": {
+      "type": "splunk.singlevalue",
+      "title": "Uptime (days)",
+      "dataSources": {
+        "primary": "ds_up"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#7B56DB"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/ap_stability",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_fwk": {
+      "type": "splunk.singlevalue",
+      "title": "Firmware",
+      "dataSources": {
+        "primary": "ds_fwk"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#2EB5A8"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/firmware",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_state": {
+      "type": "splunk.table",
+      "title": "Details",
+      "dataSources": {
+        "primary": "ds_state"
+      },
+      "options": {
+        "count": 5
+      }
+    },
+    "v_util": {
+      "type": "splunk.line",
+      "title": "CPU and memory (%)",
+      "dataSources": {
+        "primary": "ds_util"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "nullValueDisplay": "connect",
+        "seriesColorsByField": {
+          "CPU %": "#F1813F",
+          "Memory %": "#7B56DB"
+        },
+        "yAxisMax": 100,
+        "yAxisMin": 0
+      }
+    },
+    "v_tp": {
+      "type": "splunk.area",
+      "title": "Throughput by interface (bit/s)",
+      "dataSources": {
+        "primary": "ds_tp"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked",
+        "nullValueDisplay": "connect"
+      }
+    },
+    "v_fwchk": {
+      "type": "splunk.table",
+      "title": "Firmware check (click for Firmware and security)",
+      "dataSources": {
+        "primary": "ds_fwchk"
+      },
+      "options": {
+        "count": 5,
+        "columnFormat": {
+          "Status": {
+            "rowBackgroundColors": "> table | seriesByName(\"Status\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Status\") | matchValue(m0t)"
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "At or above fixed version",
+            "value": "#53A051"
+          },
+          {
+            "match": "Below fixed version",
+            "value": "#DC4E41"
+          },
+          {
+            "match": "Not in baseline",
+            "value": "#708794"
+          },
+          {
+            "match": "Unknown version",
+            "value": "#708794"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "At or above fixed version",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Below fixed version",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Not in baseline",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "Unknown version",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/firmware",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_reb": {
+      "type": "splunk.table",
+      "title": "Reboots derived from uptime",
+      "dataSources": {
+        "primary": "ds_reb"
+      },
+      "options": {
+        "count": 5,
+        "columnFormat": {
+          "Type": {
+            "rowBackgroundColors": "> table | seriesByName(\"Type\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Type\") | matchValue(m0t)"
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "Same firmware",
+            "value": "#F1813F"
+          },
+          {
+            "match": "After firmware change",
+            "value": "#1182F3"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "Same firmware",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "After firmware change",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      }
+    },
+    "v_sl": {
+      "type": "splunk.table",
+      "title": "Syslog that mentions this access point (click for the raw events)",
+      "dataSources": {
+        "primary": "ds_sl"
+      },
+      "options": {
+        "count": 8,
+        "columnFormat": {
+          "Level": {
+            "rowBackgroundColors": "> table | seriesByName(\"Level\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Level\") | matchValue(m0t)"
+          },
+          "Message": {
+            "width": 650
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "CRIT",
+            "value": "#DC4E41"
+          },
+          {
+            "match": "ERRS",
+            "value": "#F1813F"
+          },
+          {
+            "match": "WARN",
+            "value": "#D99B1E"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "CRIT",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "ERRS",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "WARN",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.linkToSearch",
+          "options": {
+            "type": "custom",
+            "query": "`aruba_syslog` [search `aruba_central_index` sourcetype=\"aruba:central:ap\" earliest=-3h serialNumber=\"$serial$\" | stats latest(deviceName) as n latest(ipv4) as ip by serialNumber | eval query=mvappend(n,ip) | fields query]",
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$",
+            "newTab": true
+          }
+        }
+      ]
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time",
+      "input_site",
+      "input_serial"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_status",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_cl",
+            "type": "block",
+            "position": {
+              "x": 200,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_cpu",
+            "type": "block",
+            "position": {
+              "x": 400,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_mem",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_up",
+            "type": "block",
+            "position": {
+              "x": 800,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_fwk",
+            "type": "block",
+            "position": {
+              "x": 1000,
+              "y": 0,
+              "w": 200,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_state",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 140,
+              "w": 1200,
+              "h": 150
+            }
+          },
+          {
+            "item": "v_util",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 290,
+              "w": 600,
+              "h": 290
+            }
+          },
+          {
+            "item": "v_tp",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 290,
+              "w": 600,
+              "h": 290
+            }
+          },
+          {
+            "item": "v_fwchk",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 580,
+              "w": 600,
+              "h": 220
+            }
+          },
+          {
+            "item": "v_reb",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 580,
+              "w": 600,
+              "h": 220
+            }
+          },
+          {
+            "item": "v_sl",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 800,
+              "w": 1200,
+              "h": 330
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Access point"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

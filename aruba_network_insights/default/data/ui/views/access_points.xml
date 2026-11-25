@@ -1,0 +1,511 @@
+<dashboard version="2" theme="dark">
+    <label>Access points</label>
+    <description>Latest state of each access point, including the swarm conductor when the swarm endpoint returns one.</description>
+    <definition><![CDATA[
+{
+  "title": "Access points",
+  "description": "Latest state of each access point, including the swarm conductor when the swarm endpoint returns one.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-24h,now"
+      }
+    },
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    },
+    "input_status": {
+      "type": "input.dropdown",
+      "title": "Status",
+      "options": {
+        "token": "status",
+        "defaultValue": "*",
+        "items": [
+          {
+            "label": "All",
+            "value": "*"
+          },
+          {
+            "label": "ONLINE",
+            "value": "ONLINE"
+          },
+          {
+            "label": "OFFLINE",
+            "value": "OFFLINE"
+          }
+        ]
+      }
+    }
+  },
+  "dataSources": {
+    "ds_n": {
+      "type": "ds.search",
+      "name": "APs",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(status) as status latest(clientCount) as sessions latest(cpuUtilization) as cpu_pct latest(memoryUtilization) as mem_pct latest(siteName) as site latest(model) as model latest(firmwareVersion) as firmware latest(clusterId) as clusterId latest(clusterName) as swarm latest(_time) as last_poll by serialNumber\n| eval cpu_pct=tonumber(cpu_pct), mem_pct=tonumber(mem_pct), sessions=tonumber(sessions)\n| stats count"
+      }
+    },
+    "ds_on": {
+      "type": "ds.search",
+      "name": "Online",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(status) as status latest(clientCount) as sessions latest(cpuUtilization) as cpu_pct latest(memoryUtilization) as mem_pct latest(siteName) as site latest(model) as model latest(firmwareVersion) as firmware latest(clusterId) as clusterId latest(clusterName) as swarm latest(_time) as last_poll by serialNumber\n| eval cpu_pct=tonumber(cpu_pct), mem_pct=tonumber(mem_pct), sessions=tonumber(sessions)\n| where status=\"ONLINE\" | stats count"
+      }
+    },
+    "ds_off": {
+      "type": "ds.search",
+      "name": "Offline",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(status) as status latest(clientCount) as sessions latest(cpuUtilization) as cpu_pct latest(memoryUtilization) as mem_pct latest(siteName) as site latest(model) as model latest(firmwareVersion) as firmware latest(clusterId) as clusterId latest(clusterName) as swarm latest(_time) as last_poll by serialNumber\n| eval cpu_pct=tonumber(cpu_pct), mem_pct=tonumber(mem_pct), sessions=tonumber(sessions)\n| where status!=\"ONLINE\" | stats count"
+      }
+    },
+    "ds_cl": {
+      "type": "ds.search",
+      "name": "Clients",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| bin _time span=5m\n| stats latest(clientCount) as c by _time serialNumber\n| timechart span=5m sum(c) as clients\n| where isnotnull(clients)"
+      }
+    },
+    "ds_aps": {
+      "type": "ds.search",
+      "name": "Access points",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(status) as status latest(clientCount) as sessions latest(cpuUtilization) as cpu_pct latest(memoryUtilization) as mem_pct latest(siteName) as site latest(model) as model latest(firmwareVersion) as firmware latest(clusterId) as clusterId latest(clusterName) as swarm latest(_time) as last_poll by serialNumber\n| eval cpu_pct=tonumber(cpu_pct), mem_pct=tonumber(mem_pct), sessions=tonumber(sessions)\n| join type=left max=1 clusterId\n    [ search `aruba_central_index` sourcetype=\"aruba:central:swarm\"\n      | stats latest(conductorDeviceName) as conductor by clusterId ]\n| eval last_poll=strftime(last_poll, \"%Y-%m-%d %H:%M:%S\")\n| where \"$status$\"=\"*\" OR status=\"$status$\"\n| table AP serialNumber status sessions cpu_pct mem_pct site swarm conductor model firmware last_poll\n| sort status AP\n| rename status as Status, sessions as Clients, cpu_pct as \"CPU %\", mem_pct as \"Memory %\", site as Site, swarm as Swarm, conductor as Conductor, model as Model, firmware as Firmware, last_poll as \"Last poll\""
+      }
+    },
+    "ds_model": {
+      "type": "ds.search",
+      "name": "By model",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(status) as status latest(clientCount) as sessions latest(cpuUtilization) as cpu_pct latest(memoryUtilization) as mem_pct latest(siteName) as site latest(model) as model latest(firmwareVersion) as firmware latest(clusterId) as clusterId latest(clusterName) as swarm latest(_time) as last_poll by serialNumber\n| eval cpu_pct=tonumber(cpu_pct), mem_pct=tonumber(mem_pct), sessions=tonumber(sessions)\n| eval s=if(status=\"ONLINE\",\"Online\",\"Offline\")\n| chart count over model by s\n| fields model Online Offline"
+      }
+    },
+    "ds_fwv": {
+      "type": "ds.search",
+      "name": "By firmware",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| stats latest(deviceName) as AP latest(status) as status latest(clientCount) as sessions latest(cpuUtilization) as cpu_pct latest(memoryUtilization) as mem_pct latest(siteName) as site latest(model) as model latest(firmwareVersion) as firmware latest(clusterId) as clusterId latest(clusterName) as swarm latest(_time) as last_poll by serialNumber\n| eval cpu_pct=tonumber(cpu_pct), mem_pct=tonumber(mem_pct), sessions=tonumber(sessions)\n| stats count by firmware | sort - count"
+      }
+    }
+  },
+  "visualizations": {
+    "v_n": {
+      "type": "splunk.singlevalue",
+      "title": "Access points",
+      "dataSources": {
+        "primary": "ds_n"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off"
+      }
+    },
+    "v_on": {
+      "type": "splunk.singlevalue",
+      "title": "Online",
+      "dataSources": {
+        "primary": "ds_on"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "majorColor": "> majorValue | rangeValue(cfg)"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051"
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "status",
+                "value": "ONLINE"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_off": {
+      "type": "splunk.singlevalue",
+      "title": "Offline",
+      "dataSources": {
+        "primary": "ds_off"
+      },
+      "options": {
+        "sparklineDisplay": "off",
+        "trendDisplay": "off",
+        "backgroundColor": "> majorValue | rangeValue(cfg)",
+        "majorColor": "#FFFFFF",
+        "unitColor": "#FFFFFF",
+        "trendColor": "#FFFFFF",
+        "sparklineStrokeColor": "#FFFFFF"
+      },
+      "context": {
+        "cfg": [
+          {
+            "value": "#53A051",
+            "to": 1
+          },
+          {
+            "value": "#DC4E41",
+            "from": 1
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "status",
+                "value": "OFFLINE"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_cl": {
+      "type": "splunk.singlevalue",
+      "title": "Wireless clients now",
+      "dataSources": {
+        "primary": "ds_cl"
+      },
+      "options": {
+        "sparklineDisplay": "below",
+        "trendDisplay": "absolute"
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/capacity?form.site=$site$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_aps": {
+      "type": "splunk.table",
+      "title": "Access points (click a row for the AP)",
+      "dataSources": {
+        "primary": "ds_aps"
+      },
+      "options": {
+        "count": 12,
+        "columnFormat": {
+          "Status": {
+            "rowBackgroundColors": "> table | seriesByName(\"Status\") | matchValue(m0)",
+            "rowColors": "> table | seriesByName(\"Status\") | matchValue(m0t)"
+          },
+          "CPU %": {
+            "rowBackgroundColors": "> table | seriesByName(\"CPU %\") | rangeValue(r0)",
+            "rowColors": "> table | seriesByName(\"CPU %\") | rangeValue(r0t)"
+          },
+          "Memory %": {
+            "rowBackgroundColors": "> table | seriesByName(\"Memory %\") | rangeValue(r1)",
+            "rowColors": "> table | seriesByName(\"Memory %\") | rangeValue(r1t)"
+          },
+          "Clients": {
+            "rowBackgroundColors": "> table | seriesByName(\"Clients\") | rangeValue(r2)",
+            "rowColors": "> table | seriesByName(\"Clients\") | rangeValue(r2t)"
+          }
+        }
+      },
+      "context": {
+        "m0": [
+          {
+            "match": "ONLINE",
+            "value": "#53A051"
+          },
+          {
+            "match": "OFFLINE",
+            "value": "#DC4E41"
+          },
+          {
+            "value": "transparent"
+          }
+        ],
+        "m0t": [
+          {
+            "match": "ONLINE",
+            "value": "#FFFFFF"
+          },
+          {
+            "match": "OFFLINE",
+            "value": "#FFFFFF"
+          },
+          {
+            "value": "#FFFFFF"
+          }
+        ],
+        "r0": [
+          {
+            "value": "transparent",
+            "to": 60
+          },
+          {
+            "value": "#D99B1E",
+            "from": 60,
+            "to": 80
+          },
+          {
+            "value": "#DC4E41",
+            "from": 80
+          }
+        ],
+        "r0t": [
+          {
+            "value": "#FFFFFF",
+            "to": 60
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 60,
+            "to": 80
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 80
+          }
+        ],
+        "r1": [
+          {
+            "value": "transparent",
+            "to": 70
+          },
+          {
+            "value": "#D99B1E",
+            "from": 70,
+            "to": 85
+          },
+          {
+            "value": "#DC4E41",
+            "from": 85
+          }
+        ],
+        "r1t": [
+          {
+            "value": "#FFFFFF",
+            "to": 70
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 70,
+            "to": 85
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 85
+          }
+        ],
+        "r2": [
+          {
+            "value": "transparent",
+            "to": 50
+          },
+          {
+            "value": "#D99B1E",
+            "from": 50,
+            "to": 75
+          },
+          {
+            "value": "#DC4E41",
+            "from": 75
+          }
+        ],
+        "r2t": [
+          {
+            "value": "#FFFFFF",
+            "to": 50
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 50,
+            "to": 75
+          },
+          {
+            "value": "#FFFFFF",
+            "from": 75
+          }
+        ]
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/access_point?form.serial=$row.serialNumber.value$&form.site=*",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_model": {
+      "type": "splunk.bar",
+      "title": "Access points by model",
+      "dataSources": {
+        "primary": "ds_model"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('model')",
+        "y": "> primary | frameBySeriesNames('Online', 'Offline')",
+        "stackMode": "stacked",
+        "seriesColorsByField": {
+          "Online": "#53A051",
+          "Offline": "#DC4E41"
+        },
+        "yAxisMajorTickSize": 1,
+        "xAxisMajorTickSize": 1
+      }
+    },
+    "v_fwv": {
+      "type": "splunk.pie",
+      "title": "Access points by firmware (click for the firmware check)",
+      "dataSources": {
+        "primary": "ds_fwv"
+      },
+      "options": {
+        "labelDisplay": "valuesAndPercentage",
+        "showDonutHole": true
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/firmware?form.site=$site$",
+            "newTab": false
+          }
+        }
+      ]
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time",
+      "input_site",
+      "input_status"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_n",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_on",
+            "type": "block",
+            "position": {
+              "x": 300,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_off",
+            "type": "block",
+            "position": {
+              "x": 600,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_cl",
+            "type": "block",
+            "position": {
+              "x": 900,
+              "y": 0,
+              "w": 300,
+              "h": 140
+            }
+          },
+          {
+            "item": "v_aps",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 140,
+              "w": 1200,
+              "h": 470
+            }
+          },
+          {
+            "item": "v_model",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 610,
+              "w": 650,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_fwv",
+            "type": "block",
+            "position": {
+              "x": 650,
+              "y": 610,
+              "w": 550,
+              "h": 300
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Access points"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>

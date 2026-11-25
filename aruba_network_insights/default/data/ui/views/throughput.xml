@@ -1,0 +1,249 @@
+<dashboard version="2" theme="dark">
+    <label>Throughput</label>
+    <description>AP throughput samples. The API reports tx and rx in bit/s, in 5-minute buckets.</description>
+    <definition><![CDATA[
+{
+  "title": "Throughput",
+  "description": "AP throughput samples. The API reports tx and rx in bit/s, in 5-minute buckets.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-24h,now"
+      }
+    },
+    "input_site": {
+      "type": "input.text",
+      "title": "Site (wildcard)",
+      "options": {
+        "token": "site",
+        "defaultValue": "*"
+      }
+    },
+    "input_iface": {
+      "type": "input.dropdown",
+      "title": "Interface",
+      "options": {
+        "token": "iface",
+        "defaultValue": "*",
+        "items": [
+          {
+            "label": "All",
+            "value": "*"
+          },
+          {
+            "label": "WIRELESS",
+            "value": "WIRELESS"
+          },
+          {
+            "label": "WIRED",
+            "value": "WIRED"
+          },
+          {
+            "label": "LTE",
+            "value": "LTE"
+          }
+        ]
+      }
+    }
+  },
+  "dataSources": {
+    "ds_trend": {
+      "type": "ds.search",
+      "name": "Total",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap_throughput\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$iface$\"=\"*\" OR interfaceType=\"$iface$\"\n| bin _time span=5m\n| stats avg(tx) as tx avg(rx) as rx by _time serialNumber\n| timechart span=5m sum(tx) as \"Transmit (bit/s)\" sum(rx) as \"Receive (bit/s)\""
+      }
+    },
+    "ds_if": {
+      "type": "ds.search",
+      "name": "By interface",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap_throughput\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$iface$\"=\"*\" OR interfaceType=\"$iface$\"\n| bin _time span=5m\n| stats avg(tx) as tx avg(rx) as rx by _time serialNumber interfaceType\n| eval total=tx+rx\n| timechart span=5m sum(total) by interfaceType"
+      }
+    },
+    "ds_top": {
+      "type": "ds.search",
+      "name": "Top 10",
+      "options": {
+        "query": "`aruba_central_index` sourcetype=\"aruba:central:ap_throughput\"\n| eval siteName=coalesce(siteName,\"(no site)\") | search siteName=\"$site$\"\n| where \"$iface$\"=\"*\" OR interfaceType=\"$iface$\"\n| stats avg(tx) as avg_tx_bps avg(rx) as avg_rx_bps max(tx) as max_tx_bps max(rx) as max_rx_bps latest(deviceName) as AP by serialNumber\n| eval avg_total_bps=round(avg_tx_bps+avg_rx_bps,0), avg_tx_bps=round(avg_tx_bps,0), avg_rx_bps=round(avg_rx_bps,0), max_tx_bps=round(max_tx_bps,0), max_rx_bps=round(max_rx_bps,0)\n| sort - avg_total_bps | head 10\n| table AP serialNumber avg_total_bps avg_tx_bps avg_rx_bps max_tx_bps max_rx_bps\n| rename avg_total_bps as \"Avg total (bit/s)\", avg_tx_bps as \"Avg tx (bit/s)\", avg_rx_bps as \"Avg rx (bit/s)\", max_tx_bps as \"Max tx (bit/s)\", max_rx_bps as \"Max rx (bit/s)\""
+      }
+    }
+  },
+  "visualizations": {
+    "v_trend": {
+      "type": "splunk.area",
+      "title": "Total throughput",
+      "dataSources": {
+        "primary": "ds_trend"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "stackMode": "stacked",
+        "nullValueDisplay": "connect",
+        "seriesColorsByField": {
+          "Transmit (bit/s)": "#1182F3",
+          "Receive (bit/s)": "#2EB5A8"
+        }
+      }
+    },
+    "v_if": {
+      "type": "splunk.line",
+      "title": "Throughput by interface type (bit/s, click to filter)",
+      "dataSources": {
+        "primary": "ds_if"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('_time')",
+        "y": "> primary | frameBySeriesTypes('number')",
+        "nullValueDisplay": "connect",
+        "lineWidth": 2
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.setToken",
+          "options": {
+            "tokens": [
+              {
+                "token": "iface",
+                "key": "name"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "v_topc": {
+      "type": "splunk.bar",
+      "title": "Top 10 access points by average throughput",
+      "dataSources": {
+        "primary": "ds_top"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "x": "> primary | seriesByName('AP')",
+        "y": "> primary | frameBySeriesNames('Avg tx (bit/s)', 'Avg rx (bit/s)')",
+        "stackMode": "stacked",
+        "seriesColorsByField": {
+          "Avg tx (bit/s)": "#1182F3",
+          "Avg rx (bit/s)": "#2EB5A8"
+        }
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/access_points?form.site=$site$",
+            "newTab": false
+          }
+        }
+      ]
+    },
+    "v_top": {
+      "type": "splunk.table",
+      "title": "Top 10 access points (click for the AP)",
+      "dataSources": {
+        "primary": "ds_top"
+      },
+      "options": {
+        "count": 10
+      },
+      "eventHandlers": [
+        {
+          "type": "drilldown.customUrl",
+          "options": {
+            "url": "/app/aruba_network_insights/access_point?form.serial=$row.serialNumber.value$&form.site=*",
+            "newTab": false
+          }
+        }
+      ]
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_time",
+      "input_site",
+      "input_iface"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "type": "grid",
+        "options": {
+          "width": 1200
+        },
+        "structure": [
+          {
+            "item": "v_trend",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 0,
+              "w": 1200,
+              "h": 300
+            }
+          },
+          {
+            "item": "v_if",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 300,
+              "w": 1200,
+              "h": 280
+            }
+          },
+          {
+            "item": "v_topc",
+            "type": "block",
+            "position": {
+              "x": 0,
+              "y": 580,
+              "w": 550,
+              "h": 380
+            }
+          },
+          {
+            "item": "v_top",
+            "type": "block",
+            "position": {
+              "x": 550,
+              "y": 580,
+              "w": 650,
+              "h": 380
+            }
+          }
+        ]
+      }
+    },
+    "options": {
+      "submitButton": false
+    },
+    "tabs": {
+      "items": [
+        {
+          "layoutId": "layout_1",
+          "label": "Throughput"
+        }
+      ]
+    }
+  }
+}
+]]></definition>
+</dashboard>
