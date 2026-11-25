@@ -13,7 +13,7 @@ management summary, operations, troubleshooting and risk views.
 | | |
 | --- | --- |
 | App ID | `aruba_network_insights` |
-| Version | 1.4.1 |
+| Version | 1.4.2 |
 | Data source | `TA_hpe_aruba_central` (tested with 1.3.0); optional Aruba syslog (SC4S, `TA-aruba_networks`) |
 | Install on | Search head |
 | License | Apache-2.0 |

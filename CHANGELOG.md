@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.2
+
+- The author in `app.conf` is Hans-Henning Gehrts (was Splunk Services (Cisco)). No other change.
+
 ## 1.4.1
 
 First release under the name Aruba Network Insights. Version 1.4.0 was never published; 1.4.1 contains everything listed
